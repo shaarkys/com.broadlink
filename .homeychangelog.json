@@ -154,5 +154,8 @@
   },
   "3.1.59": {
     "en": "Added 0x27c2 / RM3 Mini"
+  },
+  "3.1.60": {
+    "en": "Fixes for Hysen thermostats"
   }
 }
