@@ -37,6 +37,11 @@ Check              0x4b37
 const BroadlinkDevice = require("./../../lib/BroadlinkDevice");
 const CRC16 = require("crc").crc16modbus;
 
+const SENSOR_MODE_MIN = 0;
+const SENSOR_MODE_MAX = 2;
+const ROOM_TEMP_ADJUST_MIN = -5.0;
+const ROOM_TEMP_ADJUST_MAX = 5.0;
+
 class HysenDevice extends BroadlinkDevice {
   /**
    *
@@ -369,16 +374,26 @@ class HysenDevice extends BroadlinkDevice {
       if (rawLoopMode > 3) rawLoopMode = 3;
       this.data["LoopMode"] = rawLoopMode.toString();
       // --------------------------------------------------------------------
-      this.data["SensorMode"] = response[8].toString();
+      let sensorMode = response[8];
+      if (sensorMode < SENSOR_MODE_MIN || sensorMode > SENSOR_MODE_MAX) {
+        this._utils.debugLog(this, `hysen.get_full_status: clamping SensorMode ${sensorMode} to valid range`);
+        sensorMode = Math.min(Math.max(sensorMode, SENSOR_MODE_MIN), SENSOR_MODE_MAX);
+      }
+      this.data["SensorMode"] = sensorMode.toString();
       this.data["TempRangeExtSensor"] = response[9];
       this.data["FloorTempDeadZone"] = response[10];
       this.data["SensorUpperLimit"] = response[11];
       this.data["SensorLowerLimit"] = response[12];
-      this.data["RoomTempAdjust"] = (response[13] << 8) + response[14];
-      if (this.data["RoomTempAdjust"] > 32767) {
-        this.data["RoomTempAdjust"] = this.data["RoomTempAdjust"] - 65536;
+      let roomTempAdjust = (response[13] << 8) + response[14];
+      if (roomTempAdjust > 32767) {
+        roomTempAdjust = roomTempAdjust - 65536;
       }
-      this.data["RoomTempAdjust"] = this.data["RoomTempAdjust"] / 2.0;
+      roomTempAdjust = roomTempAdjust / 2.0;
+      if (roomTempAdjust < ROOM_TEMP_ADJUST_MIN || roomTempAdjust > ROOM_TEMP_ADJUST_MAX) {
+        this._utils.debugLog(this, `hysen.get_full_status: clamping RoomTempAdjust ${roomTempAdjust} to valid range`);
+        roomTempAdjust = Math.min(Math.max(roomTempAdjust, ROOM_TEMP_ADJUST_MIN), ROOM_TEMP_ADJUST_MAX);
+      }
+      this.data["RoomTempAdjust"] = roomTempAdjust;
       this.data["AntiFreezeMode"] = response[15].toString();
       this.data["poweron"] = response[16];
       //this.data['unknown'] = response[17];
