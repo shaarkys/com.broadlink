@@ -20,6 +20,9 @@
 
 const Homey = require("homey");
 const { Device } = require("homey");
+const DataStore = require("./lib/DataStore");
+const BroadlinkUtils = require("./lib/BroadlinkUtils");
+
 const DEBUG = process.env.DEBUG === "1";
 
 // Capture the original method for setWarning to prevent errors : Not Found: Device with ID
@@ -45,6 +48,158 @@ class BroadlinkApp extends Homey.App {
 
     this.homey.on("memwarn", () => {
       // simply ignore it
+    });
+
+    this._utils = new BroadlinkUtils(this.homey);
+    this._rfDevices = new Map(); // key: mac, value: device instance
+
+    this.registerApiRoutes();
+  }
+
+  /**
+   * Register an RF-capable device for API use.
+   * @param {Homey.Device} device
+   */
+  registerRfDevice(device) {
+    try {
+      const data = device.getData();
+      const mac = data?.mac;
+      if (!mac) return;
+      this._rfDevices.set(mac, device);
+    } catch (err) {
+      this._utils.debugLog(null, `registerRfDevice failed: ${err}`);
+    }
+  }
+
+  /**
+   * Unregister a device (called on delete).
+   * @param {Homey.Device} device
+   */
+  unregisterRfDevice(device) {
+    try {
+      const mac = device?.getData()?.mac;
+      if (!mac) return;
+      this._rfDevices.delete(mac);
+    } catch (err) {
+      this._utils.debugLog(null, `unregisterRfDevice failed: ${err}`);
+    }
+  }
+
+  /**
+   * Get a list of RF-capable devices.
+   */
+  listRfDevices() {
+    const devices = [];
+    this._rfDevices.forEach((device, mac) => {
+      try {
+        devices.push({
+          mac,
+          id: device.getData()?.id,
+          name: device.getName(),
+          driverId: device.driver?.id || device.getDriver()?.id,
+        });
+      } catch (err) {
+        this._utils.debugLog(null, `listRfDevices entry failed: ${err}`);
+      }
+    });
+    return devices;
+  }
+
+  /**
+   * Helper to get a datastore for a MAC address.
+   * Prefers a live device instance but falls back to a fresh DataStore.
+   */
+  async getRfStore(mac) {
+    const device = this._rfDevices.get(mac);
+    if (device && device.dataStore) {
+      // Ensure it's loaded
+      if (!device.dataStore.dataArray.length) {
+        await device.dataStore.readCommands();
+      }
+      return { dataStore: device.dataStore, device };
+    }
+
+    const dataStore = new DataStore(mac, this.homey);
+    await dataStore.readCommands();
+    return { dataStore, device: null };
+  }
+
+  registerApiRoutes() {
+    const api = this.homey.api;
+    const hasApi =
+      api && typeof api.registerGet === "function" && typeof api.registerPost === "function" && typeof api.registerDelete === "function";
+    if (!hasApi) {
+      this.log("API manager not available, RF command manager API not registered (missing register* functions)");
+      return;
+    }
+
+    // List RF devices
+    api.registerGet("/rf/devices", async (req, res) => {
+      try {
+        res.json({ devices: this.listRfDevices() });
+      } catch (err) {
+        this._utils.debugLog(null, `GET /rf/devices failed: ${err}`);
+        res.status(500).json({ error: "Failed to list devices" });
+      }
+    });
+
+    // List commands for a device
+    api.registerGet("/rf/devices/:mac/commands", async (req, res) => {
+      try {
+        const mac = req.params.mac;
+        const { dataStore } = await this.getRfStore(mac);
+        res.json({ mac, commands: dataStore.getCommandNameList(), count: dataStore.dataArray.length });
+      } catch (err) {
+        this._utils.debugLog(null, `GET /rf/devices/:mac/commands failed: ${err}`);
+        res.status(500).json({ error: "Failed to list commands" });
+      }
+    });
+
+    // Rename a command
+    api.registerPost("/rf/devices/:mac/commands/rename", async (req, res) => {
+      try {
+        const mac = req.params.mac;
+        const { oldName, newName } = req.body || {};
+        if (!oldName || !newName) {
+          return res.status(400).json({ error: "oldName and newName are required" });
+        }
+        const { dataStore, device } = await this.getRfStore(mac);
+        if (dataStore.findCommand(newName) >= 0) {
+          return res.status(400).json({ error: "A command with the new name already exists" });
+        }
+        const renamed = await dataStore.renameCommand(oldName, newName);
+        if (!renamed) {
+          return res.status(404).json({ error: "Command not found" });
+        }
+        // Keep legacy settings in sync for backward compatibility
+        if (device && typeof device.updateSettings === "function") {
+          device.updateSettings();
+        }
+        res.json({ mac, oldName, newName });
+      } catch (err) {
+        this._utils.debugLog(null, `POST /rf/devices/:mac/commands/rename failed: ${err}`);
+        res.status(500).json({ error: "Failed to rename command" });
+      }
+    });
+
+    // Delete a command
+    api.registerDelete("/rf/devices/:mac/commands/:cmdName", async (req, res) => {
+      try {
+        const mac = req.params.mac;
+        const cmdName = req.params.cmdName;
+        if (!cmdName) {
+          return res.status(400).json({ error: "Command name is required" });
+        }
+        const { dataStore, device } = await this.getRfStore(mac);
+        await dataStore.deleteCommand(cmdName);
+        if (device && typeof device.updateSettings === "function") {
+          device.updateSettings();
+        }
+        res.json({ mac, deleted: cmdName });
+      } catch (err) {
+        this._utils.debugLog(null, `DELETE /rf/devices/:mac/commands/:cmdName failed: ${err}`);
+        res.status(500).json({ error: "Failed to delete command" });
+      }
     });
   }
 }

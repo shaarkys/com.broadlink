@@ -32,6 +32,29 @@
       <input type="checkbox" id="debuglog">
       <label for="debuglog" data-i18n="settings.debuglog"></label>
     </fieldset>
+    <section id="rf-manager">
+      <div class="rf-header">
+        <div>
+          <h2>RF command manager</h2>
+          <p class="rf-subtitle">Manage learned RF commands without the 30-slot limit.</p>
+        </div>
+        <button id="rf-refresh-devices" class="ghost">Refresh devices</button>
+      </div>
+      <div class="rf-toolbar">
+        <label for="rf-device-select">Device</label>
+        <select id="rf-device-select">
+          <option value="">Select a Broadlink RM device</option>
+        </select>
+        <span id="rf-usage" class="rf-usage"></span>
+      </div>
+      <div id="rf-command-list" class="rf-command-list">
+        <div class="rf-empty">Select a device to view RF commands.</div>
+      </div>
+      <div class="rf-footer">
+        <button id="rf-refresh-commands">Refresh commands</button>
+        <span class="rf-hint">Commands are stored in app storage, not on the device, so there’s no hard limit.</span>
+      </div>
+    </section>
     <!--
     <fieldset>
       <p data-i18n="settings.errorreportinfo"></p>

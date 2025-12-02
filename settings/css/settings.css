@@ -28,3 +28,117 @@ select {
 body{
   position: relative;
 }
+
+#rf-manager {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #f8f9fb;
+}
+
+#rf-manager h2 {
+  margin: 0;
+}
+
+.rf-subtitle {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.rf-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.rf-toolbar {
+  margin: 14px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.rf-usage {
+  color: #4b5563;
+  font-size: 13px;
+}
+
+.rf-command-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rf-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.rf-row input[type="text"] {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+}
+
+.rf-row .actions {
+  display: flex;
+  gap: 6px;
+}
+
+.rf-row button {
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #f3f4f6;
+  cursor: pointer;
+}
+
+.rf-row button.delete {
+  border-color: #fca5a5;
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+.rf-row button.primary {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.rf-empty {
+  padding: 10px 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.rf-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  gap: 12px;
+}
+
+.rf-footer .rf-hint {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+button.ghost {
+  background: transparent;
+  border: 1px solid #d1d5db;
+  color: #111827;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}

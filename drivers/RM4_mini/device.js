@@ -50,26 +50,40 @@ class RM4miniDevice extends BroadlinkDevice {
    * During device initialisation, make sure the commands
    * in the datastore are identical to the device settings.
    */
-  updateSettings() {
-    let settings = this.getSettings();
-
-    // clear all settings
-    var idx = 0;
-    let settingName = "RcCmd" + idx;
-    while (settingName in settings) {
-      this.setSettings({ [settingName]: "" });
-      idx++;
-      settingName = "RcCmd" + idx;
+  async fillRcCmdPage(offset, settingsSnapshot) {
+    try {
+      const settings = settingsSnapshot || this.getSettings();
+      const backup = JSON.stringify(
+        this.dataStore.dataArray.map((item) => ({
+          name: item.name,
+          cmd: Array.from(item.cmd),
+        }))
+      );
+      const updates = { RcCmdPage: String(offset), RcCmdOffset: offset, RcCmdBackup: backup, RcCmdRestore: "" };
+      const names = this.dataStore.getCommandNameList();
+      let idx = 0;
+      let settingName = "RcCmd" + idx;
+      while (settingName in settings) {
+        updates[settingName] = names[offset + idx] || "";
+        idx++;
+        settingName = "RcCmd" + idx;
+      }
+      await this.setSettings(updates);
+      this._utils.debugLog(null, `**> RcCmd page applied (offset=${offset})`);
+    } catch (err) {
+      this._utils.debugLog(null, "**> Error updating RcCmd page:", err);
     }
+  }
 
-    // set all settings to dataStore names
-    idx = 0;
-    settingName = "RcCmd" + idx;
-    this.dataStore.getCommandNameList().forEach((s) => {
-      this.setSettings({ [settingName]: s });
-      idx++;
-      settingName = "RcCmd" + idx;
-    });
+  async updateSettings() {
+    const settings = this.getSettings();
+    const offset = parseInt(settings.RcCmdPage || settings.RcCmdOffset || 0, 10) || 0;
+    await this.fillRcCmdPage(offset, settings);
+  }
+
+  getCurrentOffset() {
+    const settings = this.getSettings();
+    return parseInt(settings.RcCmdPage || settings.RcCmdOffset || 0, 10) || 0;
   }
 
   /**
@@ -129,6 +143,9 @@ class RM4miniDevice extends BroadlinkDevice {
   async onInit() {
     await super.onInit();
     this._utils.debugLog(this, "RM4 Mini Device onInit called");
+    if (this.homey?.app && typeof this.homey.app.registerRfDevice === "function") {
+      this.homey.app.registerRfDevice(this);
+    }
     // Ensure the learnIRcmd capability exists and set its initial value
     if (!this.hasCapability("learnIRcmd")) {
       await this.addCapability("learnIRcmd");
@@ -144,7 +161,7 @@ class RM4miniDevice extends BroadlinkDevice {
     this.registerCapabilityListener("learnIRcmd", this.onCapabilityLearnIR.bind(this));
 
     try {
-      this.dataStore = new DataStore(this.getData().mac);
+      this.dataStore = new DataStore(this.getData().mac, this.homey);
       await this.dataStore.readCommands(async () => {
         this.updateSettings();
       });
@@ -198,12 +215,13 @@ class RM4miniDevice extends BroadlinkDevice {
         this._utils.debugLog(this, `Checked IR data, data: ${data}`);
 
         if (data) {
-          let idx = this.dataStore.dataArray.length + 1;
-          let cmdname = "cmd" + idx;
+          const cmdname = this.getNextCmdName();
           this.dataStore.addCommand(cmdname, data);
 
           await this.storeCmdSetting(cmdname);
           this._utils.debugLog(this, `Stored command: ${cmdname}`);
+          const offset = this.getCurrentOffset();
+          await this.fillRcCmdPage(offset);
 
           await this.setCapabilityValue("learnIRcmd", false).catch(this.error); // Turn off the capability after success
           await this.setCapabilityValue("learningState", false).catch(this.error);
@@ -231,6 +249,15 @@ class RM4miniDevice extends BroadlinkDevice {
     }, 300); // Debounce duration in milliseconds (adjust as necessary)
   }
 
+  getNextCmdName() {
+    const names = this.dataStore.getCommandNameList();
+    let idx = 1;
+    while (names.includes(`cmd${idx}`)) {
+      idx++;
+    }
+    return `cmd${idx}`;
+  }
+
   /**
    * Called when the device settings are changed by the user
    * (so NOT called on programmatically changing settings)
@@ -243,8 +270,53 @@ class RM4miniDevice extends BroadlinkDevice {
   async onSettings({ oldSettings, newSettings, changedKeys }) {
     this._utils.debugLog(this, "Settings changed:", changedKeys);
 
+    // Restore from raw JSON
+    if (changedKeys.includes("RcCmdRestore")) {
+      const raw = (newSettings.RcCmdRestore || "").trim();
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) throw new Error("Restore JSON must be an array.");
+          const restored = parsed.map((item, idx) => {
+            if (!item.name || !item.cmd) {
+              throw new Error(`Item ${idx} missing name or cmd`);
+            }
+            const cmdArray = Array.isArray(item.cmd) ? item.cmd : Array.isArray(Object.values(item.cmd)) ? Object.values(item.cmd) : null;
+            if (!cmdArray) {
+              throw new Error(`Item ${idx} cmd is not an array`);
+            }
+            return { name: String(item.name), cmd: new Uint8Array(cmdArray) };
+          });
+          this.dataStore.dataArray = restored;
+          await this.dataStore.storeCommands();
+          const newOffset = parseInt(newSettings.RcCmdPage || newSettings.RcCmdOffset || 0, 10) || 0;
+          // Defer UI refresh to avoid setSettings during onSettings
+          setTimeout(() => {
+            this.fillRcCmdPage(newOffset).catch(this.error);
+            this.setSettings({ RcCmdRestore: "" }).catch(this.error);
+          }, 50);
+          this._utils.debugLog(this, "Restore completed from RcCmdRestore JSON.");
+          return;
+        } catch (err) {
+          this._utils.debugLog(this, `Restore failed: ${err.message}`);
+          throw new Error(`Restore failed: ${err.message}`);
+        }
+      }
+    }
+
+    const offsetChanged = changedKeys.some((k) => k === "RcCmdOffset" || k === "RcCmdPage");
+    const newOffset = parseInt(newSettings.RcCmdPage || newSettings.RcCmdOffset || 0, 10) || 0;
+    if (offsetChanged && changedKeys.every((k) => k === "RcCmdOffset" || k === "RcCmdPage")) {
+      setTimeout(() => this.fillRcCmdPage(newOffset), 0);
+      this._utils.debugLog(this, "Offset/page changed, scheduled RcCmd view refresh.");
+      return;
+    }
+
     for (let i = 0; i < changedKeys.length; i++) {
       const key = changedKeys[i];
+      if (key === "RcCmdOffset" || key === "RcCmdPage") {
+        continue;
+      }
       const oldName = oldSettings[key] || "";
       const newName = newSettings[key] || "";
 
@@ -260,19 +332,23 @@ class RM4miniDevice extends BroadlinkDevice {
           const renamed = await this.dataStore.renameCommand(oldName, newName);
           if (renamed) {
             this._utils.debugLog(this, `Command renamed from ${oldName} to ${newName}`);
+            const offset = this.getCurrentOffset();
+            setTimeout(() => this.fillRcCmdPage(offset), 0);
           } else {
             this._utils.debugLog(this, `Failed to rename command ${oldName} to ${newName}`);
           }
         } else {
           this._utils.debugLog(this, `Error: No old command found for new command ${newName}`);
-          throw new Error(this.homey.__("errors.save_settings_nocmd", { cmd: newName }));
-        }
-      } else {
-        if (oldName && oldName.length > 0) {
-          await this.dataStore.deleteCommand(oldName);
-          this._utils.debugLog(this, `Command ${oldName} deleted.`);
-        }
+        throw new Error(this.homey.__("errors.save_settings_nocmd", { cmd: newName }));
       }
+    } else {
+      if (oldName && oldName.length > 0) {
+        await this.dataStore.deleteCommand(oldName);
+        this._utils.debugLog(this, `Command ${oldName} deleted.`);
+        const offset = this.getCurrentOffset();
+        setTimeout(() => this.fillRcCmdPage(offset), 0);
+      }
+    }
 
       if (key === "ipAddress" && this._communicate) {
         this._communicate.setIPaddress(newSettings.ipAddress);
@@ -303,6 +379,10 @@ class RM4miniDevice extends BroadlinkDevice {
       }
     }
 
+    if (offsetChanged) {
+      setTimeout(() => this.fillRcCmdPage(newOffset), 0);
+    }
+
     this._utils.debugLog(this, "Settings successfully updated.");
   }
 
@@ -315,6 +395,9 @@ class RM4miniDevice extends BroadlinkDevice {
     this.stop_check_interval();
     this._communicate.destroy();
     this._communicate = null;
+    if (this.homey?.app && typeof this.homey.app.unregisterRfDevice === "function") {
+      this.homey.app.unregisterRfDevice(this);
+    }
   }
 }
 

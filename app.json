@@ -2722,16 +2722,53 @@
     {
       "settings": [
         {
+          "id": "RcCmdGroup",
           "type": "group",
           "label": {
             "en": "RC Commands",
             "nl": "RC commando's"
           },
           "description": {
-            "en": "Change name to give a command a new name. Clear name to delete a command. Note that this may break you flows",
-            "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Let op: dit kan bestaande flows invalide maken."
+            "en": "Change name to give a command a new name. Clear name to delete a command. Use the offset below to page through commands beyond the first 30. Note that this may break your flows.",
+            "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Gebruik de offset hieronder om verder dan de eerste 30 commando's te bladeren. Let op: dit kan bestaande flows invalide maken."
           },
           "children": [
+            {
+              "id": "RcCmdPage",
+              "type": "dropdown",
+              "value": "0",
+              "label": {
+                "en": "Command set",
+                "nl": "Commandoset"
+              },
+              "values": [
+                {
+                  "id": "0",
+                  "label": {
+                    "en": "1-30",
+                    "nl": "1-30"
+                  }
+                },
+                {
+                  "id": "30",
+                  "label": {
+                    "en": "31-60",
+                    "nl": "31-60"
+                  }
+                },
+                {
+                  "id": "60",
+                  "label": {
+                    "en": "61-90",
+                    "nl": "61-90"
+                  }
+                }
+              ],
+              "hint": {
+                "en": "Select which block of 30 commands to show below. Stored commands stay intact.",
+                "nl": "Kies welk blok van 30 commando's hieronder wordt getoond. Opgeslagen commando's blijven intact."
+              }
+            },
             {
               "id": "RcCmd0",
               "type": "text",
@@ -3090,6 +3127,49 @@
               "hint": {
                 "en": "Change name to give a command a new name. Clear name to delete a command. Note that this may break you flows.",
                 "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Let op: dit kan bestaande flows invalide maken."
+              }
+            }
+          ]
+        },
+        {
+          "id": "RcCmdBackupGroup",
+          "type": "group",
+          "label": {
+            "en": "Backup / Restore",
+            "nl": "Back-up / Herstel"
+          },
+          "description": {
+            "en": "Copy the raw JSON below as a backup. To restore, paste a JSON array of objects with 'name' and 'cmd' (number array) and press Save. Restoring replaces all stored commands.",
+            "nl": "Kopieer de ruwe JSON hieronder als back-up. Om te herstellen, plak een JSON-array met 'name' en 'cmd' (nummer array) en druk op Opslaan. Herstellen vervangt alle opgeslagen commando's."
+          },
+          "children": [
+            {
+              "id": "RcCmdBackup",
+              "type": "textarea",
+              "value": "",
+              "label": {
+                "en": "Backup (read-only copy)",
+                "nl": "Back-up (alleen lezen)"
+              },
+              "attr": {
+                "readonly": true
+              },
+              "hint": {
+                "en": "Copy this JSON as a backup. It is updated when the command list is refreshed.",
+                "nl": "Kopieer deze JSON als back-up. Wordt bijgewerkt wanneer de commando lijst wordt ververst."
+              }
+            },
+            {
+              "id": "RcCmdRestore",
+              "type": "textarea",
+              "value": "",
+              "label": {
+                "en": "Restore (paste JSON here)",
+                "nl": "Herstel (plak JSON hier)"
+              },
+              "hint": {
+                "en": "Paste backup JSON here and Save to overwrite all commands. Must be an array of {name, cmd:[numbers]}.",
+                "nl": "Plak back-up JSON hier en klik op Opslaan om alle commando's te overschrijven. Moet een array zijn van {name, cmd:[nummers]}."
               }
             }
           ]
@@ -3166,16 +3246,53 @@
     {
       "settings": [
         {
+          "id": "RcCmdGroup",
           "type": "group",
           "label": {
             "en": "RC Commands",
             "nl": "RC commando's"
           },
           "description": {
-            "en": "Change name to give a command a new name. Clear name to delete a command. Note that this may break you flows",
-            "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Let op: dit kan bestaande flows invalide maken."
+            "en": "Change name to give a command a new name. Clear name to delete a command. Use the offset below to page through commands beyond the first 30. Note that this may break your flows.",
+            "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Gebruik de offset hieronder om verder dan de eerste 30 commando's te bladeren. Let op: dit kan bestaande flows invalide maken."
           },
           "children": [
+            {
+              "id": "RcCmdPage",
+              "type": "dropdown",
+              "value": "0",
+              "label": {
+                "en": "Command set",
+                "nl": "Commandoset"
+              },
+              "values": [
+                {
+                  "id": "0",
+                  "label": {
+                    "en": "1-30",
+                    "nl": "1-30"
+                  }
+                },
+                {
+                  "id": "30",
+                  "label": {
+                    "en": "31-60",
+                    "nl": "31-60"
+                  }
+                },
+                {
+                  "id": "60",
+                  "label": {
+                    "en": "61-90",
+                    "nl": "61-90"
+                  }
+                }
+              ],
+              "hint": {
+                "en": "Select which block of 30 commands to show below. Stored commands stay intact.",
+                "nl": "Kies welk blok van 30 commando's hieronder wordt getoond. Opgeslagen commando's blijven intact."
+              }
+            },
             {
               "id": "RcCmd0",
               "type": "text",
@@ -3534,6 +3651,49 @@
               "hint": {
                 "en": "Change name to give a command a new name. Clear name to delete a command. Note that this may break you flows.",
                 "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Let op: dit kan bestaande flows invalide maken."
+              }
+            }
+          ]
+        },
+        {
+          "id": "RcCmdBackupGroup",
+          "type": "group",
+          "label": {
+            "en": "Backup / Restore",
+            "nl": "Back-up / Herstel"
+          },
+          "description": {
+            "en": "Copy the raw JSON below as a backup. To restore, paste a JSON array of objects with 'name' and 'cmd' (number array) and press Save. Restoring replaces all stored commands.",
+            "nl": "Kopieer de ruwe JSON hieronder als back-up. Om te herstellen, plak een JSON-array met 'name' en 'cmd' (nummer array) en druk op Opslaan. Herstellen vervangt alle opgeslagen commando's."
+          },
+          "children": [
+            {
+              "id": "RcCmdBackup",
+              "type": "textarea",
+              "value": "",
+              "label": {
+                "en": "Backup (read-only copy)",
+                "nl": "Back-up (alleen lezen)"
+              },
+              "attr": {
+                "readonly": true
+              },
+              "hint": {
+                "en": "Copy this JSON as a backup. It is updated when the command list is refreshed.",
+                "nl": "Kopieer deze JSON als back-up. Wordt bijgewerkt wanneer de commando lijst wordt ververst."
+              }
+            },
+            {
+              "id": "RcCmdRestore",
+              "type": "textarea",
+              "value": "",
+              "label": {
+                "en": "Restore (paste JSON here)",
+                "nl": "Herstel (plak JSON hier)"
+              },
+              "hint": {
+                "en": "Paste backup JSON here and Save to overwrite all commands. Must be an array of {name, cmd:[numbers]}.",
+                "nl": "Plak back-up JSON hier en klik op Opslaan om alle commando's te overschrijven. Moet een array zijn van {name, cmd:[nummers]}."
               }
             }
           ]
@@ -3610,16 +3770,53 @@
     {
       "settings": [
         {
+          "id": "RcCmdGroup",
           "type": "group",
           "label": {
             "en": "RC Commands",
             "nl": "RC commando's"
           },
           "description": {
-            "en": "Change name to give a command a new name. Clear name to delete a command. Note that this may break you flows",
-            "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Let op: dit kan bestaande flows invalide maken."
+            "en": "Change name to give a command a new name. Clear name to delete a command. Use the offset below to page through commands beyond the first 30. Note that this may break your flows.",
+            "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Gebruik de offset hieronder om verder dan de eerste 30 commando's te bladeren. Let op: dit kan bestaande flows invalide maken."
           },
           "children": [
+            {
+              "id": "RcCmdPage",
+              "type": "dropdown",
+              "value": "0",
+              "label": {
+                "en": "Command set",
+                "nl": "Commandoset"
+              },
+              "values": [
+                {
+                  "id": "0",
+                  "label": {
+                    "en": "1-30",
+                    "nl": "1-30"
+                  }
+                },
+                {
+                  "id": "30",
+                  "label": {
+                    "en": "31-60",
+                    "nl": "31-60"
+                  }
+                },
+                {
+                  "id": "60",
+                  "label": {
+                    "en": "61-90",
+                    "nl": "61-90"
+                  }
+                }
+              ],
+              "hint": {
+                "en": "Select which block of 30 commands to show below. Stored commands stay intact.",
+                "nl": "Kies welk blok van 30 commando's hieronder wordt getoond. Opgeslagen commando's blijven intact."
+              }
+            },
             {
               "id": "RcCmd0",
               "type": "text",
@@ -3978,6 +4175,49 @@
               "hint": {
                 "en": "Change name to give a command a new name. Clear name to delete a command. Note that this may break you flows.",
                 "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Let op: dit kan bestaande flows invalide maken."
+              }
+            }
+          ]
+        },
+        {
+          "id": "RcCmdBackupGroup",
+          "type": "group",
+          "label": {
+            "en": "Backup / Restore",
+            "nl": "Back-up / Herstel"
+          },
+          "description": {
+            "en": "Copy the raw JSON below as a backup. To restore, paste a JSON array of objects with 'name' and 'cmd' (number array) and press Save. Restoring replaces all stored commands.",
+            "nl": "Kopieer de ruwe JSON hieronder als back-up. Om te herstellen, plak een JSON-array met 'name' en 'cmd' (nummer array) en druk op Opslaan. Herstellen vervangt alle opgeslagen commando's."
+          },
+          "children": [
+            {
+              "id": "RcCmdBackup",
+              "type": "textarea",
+              "value": "",
+              "label": {
+                "en": "Backup (read-only copy)",
+                "nl": "Back-up (alleen lezen)"
+              },
+              "attr": {
+                "readonly": true
+              },
+              "hint": {
+                "en": "Copy this JSON as a backup. It is updated when the command list is refreshed.",
+                "nl": "Kopieer deze JSON als back-up. Wordt bijgewerkt wanneer de commando lijst wordt ververst."
+              }
+            },
+            {
+              "id": "RcCmdRestore",
+              "type": "textarea",
+              "value": "",
+              "label": {
+                "en": "Restore (paste JSON here)",
+                "nl": "Herstel (plak JSON hier)"
+              },
+              "hint": {
+                "en": "Paste backup JSON here and Save to overwrite all commands. Must be an array of {name, cmd:[numbers]}.",
+                "nl": "Plak back-up JSON hier en klik op Opslaan om alle commando's te overschrijven. Moet een array zijn van {name, cmd:[nummers]}."
               }
             }
           ]
@@ -4058,16 +4298,53 @@
     {
       "settings": [
         {
+          "id": "RcCmdGroup",
           "type": "group",
           "label": {
             "en": "RC Commands",
             "nl": "RC commando's"
           },
           "description": {
-            "en": "Change name to give a command a new name. Clear name to delete a command. Note that this may break you flows",
-            "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Let op: dit kan bestaande flows invalide maken."
+            "en": "Change name to give a command a new name. Clear name to delete a command. Use the offset below to page through commands beyond the first 30. Note that this may break your flows.",
+            "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Gebruik de offset hieronder om verder dan de eerste 30 commando's te bladeren. Let op: dit kan bestaande flows invalide maken."
           },
           "children": [
+            {
+              "id": "RcCmdPage",
+              "type": "dropdown",
+              "value": "0",
+              "label": {
+                "en": "Command set",
+                "nl": "Commandoset"
+              },
+              "values": [
+                {
+                  "id": "0",
+                  "label": {
+                    "en": "1-30",
+                    "nl": "1-30"
+                  }
+                },
+                {
+                  "id": "30",
+                  "label": {
+                    "en": "31-60",
+                    "nl": "31-60"
+                  }
+                },
+                {
+                  "id": "60",
+                  "label": {
+                    "en": "61-90",
+                    "nl": "61-90"
+                  }
+                }
+              ],
+              "hint": {
+                "en": "Select which block of 30 commands to show below. Stored commands stay intact.",
+                "nl": "Kies welk blok van 30 commando's hieronder wordt getoond. Opgeslagen commando's blijven intact."
+              }
+            },
             {
               "id": "RcCmd0",
               "type": "text",
@@ -4426,6 +4703,49 @@
               "hint": {
                 "en": "Change name to give a command a new name. Clear name to delete a command. Note that this may break you flows.",
                 "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Let op: dit kan bestaande flows invalide maken."
+              }
+            }
+          ]
+        },
+        {
+          "id": "RcCmdBackupGroup",
+          "type": "group",
+          "label": {
+            "en": "Backup / Restore",
+            "nl": "Back-up / Herstel"
+          },
+          "description": {
+            "en": "Copy the raw JSON below as a backup. To restore, paste a JSON array of objects with 'name' and 'cmd' (number array) and press Save. Restoring replaces all stored commands.",
+            "nl": "Kopieer de ruwe JSON hieronder als back-up. Om te herstellen, plak een JSON-array met 'name' en 'cmd' (nummer array) en druk op Opslaan. Herstellen vervangt alle opgeslagen commando's."
+          },
+          "children": [
+            {
+              "id": "RcCmdBackup",
+              "type": "textarea",
+              "value": "",
+              "label": {
+                "en": "Backup (read-only copy)",
+                "nl": "Back-up (alleen lezen)"
+              },
+              "attr": {
+                "readonly": true
+              },
+              "hint": {
+                "en": "Copy this JSON as a backup. It is updated when the command list is refreshed.",
+                "nl": "Kopieer deze JSON als back-up. Wordt bijgewerkt wanneer de commando lijst wordt ververst."
+              }
+            },
+            {
+              "id": "RcCmdRestore",
+              "type": "textarea",
+              "value": "",
+              "label": {
+                "en": "Restore (paste JSON here)",
+                "nl": "Herstel (plak JSON hier)"
+              },
+              "hint": {
+                "en": "Paste backup JSON here and Save to overwrite all commands. Must be an array of {name, cmd:[numbers]}.",
+                "nl": "Plak back-up JSON hier en klik op Opslaan om alle commando's te overschrijven. Moet een array zijn van {name, cmd:[nummers]}."
               }
             }
           ]
@@ -4522,16 +4842,53 @@
     {
       "settings": [
         {
+          "id": "RcCmdGroup",
           "type": "group",
           "label": {
             "en": "RC Commands",
             "nl": "RC commando's"
           },
           "description": {
-            "en": "Change name to give a command a new name. Clear name to delete a command. Note that this may break you flows",
-            "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Let op: dit kan bestaande flows invalide maken."
+            "en": "Change name to give a command a new name. Clear name to delete a command. Use the offset below to page through commands beyond the first 30. Note that this may break your flows.",
+            "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Gebruik de offset hieronder om verder dan de eerste 30 commando's te bladeren. Let op: dit kan bestaande flows invalide maken."
           },
           "children": [
+            {
+              "id": "RcCmdPage",
+              "type": "dropdown",
+              "value": "0",
+              "label": {
+                "en": "Command set",
+                "nl": "Commandoset"
+              },
+              "values": [
+                {
+                  "id": "0",
+                  "label": {
+                    "en": "1-30",
+                    "nl": "1-30"
+                  }
+                },
+                {
+                  "id": "30",
+                  "label": {
+                    "en": "31-60",
+                    "nl": "31-60"
+                  }
+                },
+                {
+                  "id": "60",
+                  "label": {
+                    "en": "61-90",
+                    "nl": "61-90"
+                  }
+                }
+              ],
+              "hint": {
+                "en": "Select which block of 30 commands to show below. Stored commands stay intact.",
+                "nl": "Kies welk blok van 30 commando's hieronder wordt getoond. Opgeslagen commando's blijven intact."
+              }
+            },
             {
               "id": "RcCmd0",
               "type": "text",
@@ -4890,6 +5247,49 @@
               "hint": {
                 "en": "Change name to give a command a new name. Clear name to delete a command. Note that this may break you flows.",
                 "nl": "Pas de naam aan om het commando te benoemen. Verwijder de naam om een commando te wissen. Let op: dit kan bestaande flows invalide maken."
+              }
+            }
+          ]
+        },
+        {
+          "id": "RcCmdBackupGroup",
+          "type": "group",
+          "label": {
+            "en": "Backup / Restore",
+            "nl": "Back-up / Herstel"
+          },
+          "description": {
+            "en": "Copy the raw JSON below as a backup. To restore, paste a JSON array of objects with 'name' and 'cmd' (number array) and press Save. Restoring replaces all stored commands.",
+            "nl": "Kopieer de ruwe JSON hieronder als back-up. Om te herstellen, plak een JSON-array met 'name' en 'cmd' (nummer array) en druk op Opslaan. Herstellen vervangt alle opgeslagen commando's."
+          },
+          "children": [
+            {
+              "id": "RcCmdBackup",
+              "type": "textarea",
+              "value": "",
+              "label": {
+                "en": "Backup (read-only copy)",
+                "nl": "Back-up (alleen lezen)"
+              },
+              "attr": {
+                "readonly": true
+              },
+              "hint": {
+                "en": "Copy this JSON as a backup. It is updated when the command list is refreshed.",
+                "nl": "Kopieer deze JSON als back-up. Wordt bijgewerkt wanneer de commando lijst wordt ververst."
+              }
+            },
+            {
+              "id": "RcCmdRestore",
+              "type": "textarea",
+              "value": "",
+              "label": {
+                "en": "Restore (paste JSON here)",
+                "nl": "Herstel (plak JSON hier)"
+              },
+              "hint": {
+                "en": "Paste backup JSON here and Save to overwrite all commands. Must be an array of {name, cmd:[numbers]}.",
+                "nl": "Plak back-up JSON hier en klik op Opslaan om alle commando's te overschrijven. Moet een array zijn van {name, cmd:[nummers]}."
               }
             }
           ]
