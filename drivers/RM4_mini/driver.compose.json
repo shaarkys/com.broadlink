@@ -1,8 +1,8 @@
 {
   "id": "RM4_mini",
   "name": {
-    "en": "RM4 Mini",
-    "nl": "RM4 Mini"
+    "en": "RM4 Mini / RM5 Plus",
+    "nl": "RM4 Mini / RM5 Plus"
   },
   "images": {
     "large": ".{{driverAssetsPath}}/images/large.jpg",
