@@ -2770,6 +2770,15 @@
               }
             },
             {
+              "id": "RcCmdPageInfo",
+              "type": "label",
+              "label": {
+                "en": "Current command set",
+                "nl": "Huidige commandoset"
+              },
+              "value": "Active: 1-30"
+            },
+            {
               "id": "RcCmd0",
               "type": "text",
               "value": "",
@@ -3294,6 +3303,15 @@
               }
             },
             {
+              "id": "RcCmdPageInfo",
+              "type": "label",
+              "label": {
+                "en": "Current command set",
+                "nl": "Huidige commandoset"
+              },
+              "value": "Active: 1-30"
+            },
+            {
               "id": "RcCmd0",
               "type": "text",
               "value": "",
@@ -3816,6 +3834,15 @@
                 "en": "Select which block of 30 commands to show below. Stored commands stay intact.",
                 "nl": "Kies welk blok van 30 commando's hieronder wordt getoond. Opgeslagen commando's blijven intact."
               }
+            },
+            {
+              "id": "RcCmdPageInfo",
+              "type": "label",
+              "label": {
+                "en": "Current command set",
+                "nl": "Huidige commandoset"
+              },
+              "value": "Active: 1-30"
             },
             {
               "id": "RcCmd0",
@@ -4344,6 +4371,15 @@
                 "en": "Select which block of 30 commands to show below. Stored commands stay intact.",
                 "nl": "Kies welk blok van 30 commando's hieronder wordt getoond. Opgeslagen commando's blijven intact."
               }
+            },
+            {
+              "id": "RcCmdPageInfo",
+              "type": "label",
+              "label": {
+                "en": "Current command set",
+                "nl": "Huidige commandoset"
+              },
+              "value": "Active: 1-30"
             },
             {
               "id": "RcCmd0",
@@ -4888,6 +4924,15 @@
                 "en": "Select which block of 30 commands to show below. Stored commands stay intact.",
                 "nl": "Kies welk blok van 30 commando's hieronder wordt getoond. Opgeslagen commando's blijven intact."
               }
+            },
+            {
+              "id": "RcCmdPageInfo",
+              "type": "label",
+              "label": {
+                "en": "Current command set",
+                "nl": "Huidige commandoset"
+              },
+              "value": "Active: 1-30"
             },
             {
               "id": "RcCmd0",

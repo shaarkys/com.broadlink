@@ -59,7 +59,11 @@ class RM4ProDevice extends BroadlinkDevice {
           cmd: Array.from(item.cmd),
         }))
       );
-      const updates = { RcCmdPage: String(offset), RcCmdOffset: offset, RcCmdBackup: backup, RcCmdRestore: "" };
+      let pageLabel = "Active: 1-30";
+      if (offset >= 60) pageLabel = "Active: 61-90";
+      else if (offset >= 30) pageLabel = "Active: 31-60";
+
+      const updates = { RcCmdPage: String(offset), RcCmdOffset: offset, RcCmdBackup: backup, RcCmdRestore: "", RcCmdPageInfo: pageLabel };
       const names = this.dataStore.getCommandNameList();
       let idx = 0;
       let settingName = "RcCmd" + idx;

@@ -23,6 +23,12 @@
 						"nl": "Kies welk blok van 30 commando's hieronder wordt getoond. Opgeslagen commando's blijven intact."
 					}
 				},
+				{
+					"id": "RcCmdPageInfo",
+					"type": "label",
+					"label": { "en": "Current command set", "nl": "Huidige commandoset" },
+					"value": "Active: 1-30"
+				},
 				{ "id": "RcCmd0", "type": "text", "value": "", "label": { "en": "1" },
 					"hint": {
 						"en": "Change name to give a command a new name. Clear name to delete a command. Note that this may break you flows.",

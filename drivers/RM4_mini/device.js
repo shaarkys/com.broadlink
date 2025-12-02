@@ -59,6 +59,10 @@ class RM4miniDevice extends BroadlinkDevice {
           cmd: Array.from(item.cmd),
         }))
       );
+      let pageLabel = "Active: 1-30";
+      if (offset >= 60) pageLabel = "Active: 61-90";
+      else if (offset >= 30) pageLabel = "Active: 31-60";
+
       const updates = { RcCmdPage: String(offset), RcCmdOffset: offset, RcCmdBackup: backup, RcCmdRestore: "" };
       const names = this.dataStore.getCommandNameList();
       let idx = 0;
@@ -68,6 +72,7 @@ class RM4miniDevice extends BroadlinkDevice {
         idx++;
         settingName = "RcCmd" + idx;
       }
+      updates["RcCmdPageInfo"] = pageLabel;
       await this.setSettings(updates);
       this._utils.debugLog(null, `**> RcCmd page applied (offset=${offset})`);
     } catch (err) {
