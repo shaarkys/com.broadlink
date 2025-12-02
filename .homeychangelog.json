@@ -157,5 +157,8 @@
   },
   "3.1.60": {
     "en": "Fixes for Hysen thermostats"
+  },
+  "3.1.61": {
+    "en": "Experimental - extended numbers of saved commands up to 90 and added backup/restore functionality"
   }
 }
