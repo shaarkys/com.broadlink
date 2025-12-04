@@ -97,79 +97,11 @@ class RmProDevice extends RM3MiniDevice {
     }
   }
 
-   /**
-   * Called when the device settings are changed by the user
-   * (so NOT called on programmatically changing settings)
-   *
-   *  @param oldSettingsObj   contains the previous settings object
-   *  @param newSettingsObj   contains the new settings object
-   *  @param changedKeysArr   contains an array of keys that have been changed
-   *  @return {Promise<void>}
+  /**
+   * Use the RM3 Mini settings handler so command paging/backup logic stays aligned.
    */
-   async onSettings({ oldSettings, newSettings, changedKeys }) {
-    this._utils.debugLog(this, "Settings changed:", changedKeys);
-
-    for (let i = 0; i < changedKeys.length; i++) {
-      const key = changedKeys[i];
-      const oldName = oldSettings[key] || "";
-      const newName = newSettings[key] || "";
-
-      this._utils.debugLog(this, `Changed setting key: ${key}, Old value: ${oldName}, New value: ${newName}`);
-
-      if (newName && newName.length > 0) {
-        if (oldName && oldName.length > 0) {
-          if (this.dataStore.findCommand(newName) >= 0) {
-            this._utils.debugLog(this, `Error: Command ${newName} already exists`);
-            throw new Error(this.homey.__("errors.save_settings_exist", { cmd: newName }));
-          }
-          // Rename the command if the old name exists and new name is provided
-          const renamed = await this.dataStore.renameCommand(oldName, newName);
-          if (renamed) {
-            this._utils.debugLog(this, `Command renamed from ${oldName} to ${newName}`);
-          } else {
-            this._utils.debugLog(this, `Failed to rename command ${oldName} to ${newName}`);
-          }
-        } else {
-          this._utils.debugLog(this, `Error: No old command found for new command ${newName}`);
-          throw new Error(this.homey.__("errors.save_settings_nocmd", { cmd: newName }));
-        }
-      } else {
-        if (oldName && oldName.length > 0) {
-          await this.dataStore.deleteCommand(oldName);
-          this._utils.debugLog(this, `Command ${oldName} deleted.`);
-        }
-      }
-
-      if (key === "ipAddress" && this._communicate) {
-        this._communicate.setIPaddress(newSettings.ipAddress);
-        this._utils.debugLog(this, `IP Address changed from ${oldSettings.ipAddress} to ${newSettings.ipAddress}`);
-      }
-
-      if (key === "Authenticate" && newName === true) {
-        this._utils.debugLog(this, "Re-authenticating device due to settings change");
-        let deviceData = this.getData();
-        let options = {
-          ipAddress: this.getSettings().ipAddress,
-          mac: this._utils.hexToArr(deviceData.mac),
-          count: Math.floor(Math.random() * 0xffff),
-          id: null,
-          key: null,
-          homey: this.homey,
-          deviceType: parseInt(deviceData.devtype, 16),
-        };
-        this._communicate.configure(options);
-        await this.authenticateDevice();
-
-        // Defer resetting the Authenticate setting
-        process.nextTick(async () => {
-          await this.setSettings({ Authenticate: false }).catch((e) => {
-            this._utils.debugLog(this, "Error resetting Authenticate setting:", e.toString());
-          });
-        });
-      }
-    }
-
-    this._utils.debugLog(this, "Settings successfully updated.");
+  async onSettings(args) {
+    return super.onSettings(args);
   }
 
   async executeCommand(args) {
