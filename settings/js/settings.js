@@ -14,14 +14,45 @@ const rfState = {
   commands: [],
 };
 
-function api(Homey, method, path, body) {
+function settingsGet(Homey, key) {
   return new Promise((resolve, reject) => {
-    Homey.api(method, path, body, (err, result) => {
+    Homey.get(key, (err, value) => {
       if (err) return reject(err);
-      if (result && result.error) return reject(new Error(result.error));
-      resolve(result);
+      resolve(value);
     });
   });
+}
+
+function settingsSet(Homey, key, value) {
+  return new Promise((resolve, reject) => {
+    Homey.set(key, value, (err) => {
+      if (err) return reject(err);
+      resolve();
+    });
+  });
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForResult(Homey, requestId, timeoutMs) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const result = await settingsGet(Homey, "rfManagerResult");
+    if (result && result.requestId === requestId) {
+      if (result.ok) return result;
+      throw new Error(result.error || "RF manager action failed");
+    }
+    await delay(200);
+  }
+  throw new Error("Timed out waiting for RF manager");
+}
+
+async function callAction(Homey, action) {
+  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  await settingsSet(Homey, "rfManagerAction", Object.assign({}, action, { requestId }));
+  return waitForResult(Homey, requestId, 4000);
 }
 
 function setUsageText(text) {
@@ -98,8 +129,9 @@ function renderCommands() {
 
 async function loadDevices(Homey) {
   try {
-    const result = await api(Homey, "GET", "/rf/devices");
-    rfState.devices = result.devices || [];
+    await callAction(Homey, { type: "refreshDevices" });
+    const devices = await settingsGet(Homey, "rfDevices");
+    rfState.devices = Array.isArray(devices) ? devices : [];
     const previousSelection = rfState.selectedMac;
     if (!previousSelection || !rfState.devices.find((d) => d.mac === previousSelection)) {
       rfState.selectedMac = rfState.devices[0]?.mac || "";
@@ -115,7 +147,7 @@ async function loadDevices(Homey) {
     }
   } catch (err) {
     console.error(err);
-    Homey.alert("Failed to load RF devices. Is the app updated to the latest version?", "error");
+    Homey.alert(err && err.message ? err.message : "Failed to load RF devices.", "error");
   }
 }
 
@@ -125,8 +157,9 @@ async function loadCommands(Homey) {
     return;
   }
   try {
-    const result = await api(Homey, "GET", `/rf/devices/${rfState.selectedMac}/commands`);
-    rfState.commands = result.commands || [];
+    await callAction(Homey, { type: "refreshCommands", mac: rfState.selectedMac });
+    const commands = await settingsGet(Homey, `rfCommands_${rfState.selectedMac}`);
+    rfState.commands = Array.isArray(commands) ? commands : [];
     setUsageText(`${rfState.commands.length} command(s) stored`);
     renderCommands();
   } catch (err) {
@@ -140,9 +173,8 @@ async function onRenameCommand(oldName, newName) {
     return;
   }
   try {
-    await api(Homey, "POST", `/rf/devices/${rfState.selectedMac}/commands/rename`, { oldName, newName });
-    rfState.commands = rfState.commands.map((c) => (c === oldName ? newName : c));
-    renderCommands();
+    await callAction(Homey, { type: "renameCommand", mac: rfState.selectedMac, oldName, newName });
+    await loadCommands(Homey);
     Homey.alert(`Renamed to ${newName}`, "info");
   } catch (err) {
     console.error(err);
@@ -153,10 +185,8 @@ async function onRenameCommand(oldName, newName) {
 async function onDeleteCommand(cmdName) {
   if (!confirm(`Delete command "${cmdName}"?`)) return;
   try {
-    await api(Homey, "DELETE", `/rf/devices/${rfState.selectedMac}/commands/${encodeURIComponent(cmdName)}`);
-    rfState.commands = rfState.commands.filter((c) => c !== cmdName);
-    setUsageText(`${rfState.commands.length} command(s) stored`);
-    renderCommands();
+    await callAction(Homey, { type: "deleteCommand", mac: rfState.selectedMac, cmdName });
+    await loadCommands(Homey);
   } catch (err) {
     console.error(err);
     Homey.alert("Delete failed", "error");
