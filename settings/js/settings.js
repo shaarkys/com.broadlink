@@ -36,6 +36,26 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function askDeleteConfirmation(Homey, cmdName) {
+  const message = `Delete command "${cmdName}"?`;
+  if (Homey && typeof Homey.confirm === "function") {
+    return new Promise((resolve) => {
+      Homey.confirm(message, "warning", (err, confirmed) => {
+        if (err) {
+          console.error(err);
+          resolve(false);
+          return;
+        }
+        resolve(Boolean(confirmed));
+      });
+    });
+  }
+  if (typeof window !== "undefined" && typeof window.confirm === "function") {
+    return Promise.resolve(window.confirm(message));
+  }
+  return Promise.resolve(true);
+}
+
 async function waitForResult(Homey, requestId, timeoutMs) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -63,7 +83,7 @@ function setUsageText(text) {
 function renderDeviceSelect() {
   const select = document.getElementById("rf-device-select");
   if (!select) return;
-  select.innerHTML = '<option value="">Select a Broadlink RM device</option>';
+  select.innerHTML = "";
   rfState.devices.forEach((device) => {
     const option = document.createElement("option");
     option.value = device.mac;
@@ -106,11 +126,13 @@ function renderCommands() {
     const saveBtn = document.createElement("button");
     saveBtn.textContent = "Rename";
     saveBtn.className = "primary";
+    saveBtn.type = "button";
     saveBtn.addEventListener("click", () => onRenameCommand(name, input.value.trim()));
 
     const deleteBtn = document.createElement("button");
     deleteBtn.textContent = "Delete";
     deleteBtn.className = "delete";
+    deleteBtn.type = "button";
     deleteBtn.addEventListener("click", () => onDeleteCommand(name));
 
     input.addEventListener("keyup", (ev) => {
@@ -183,7 +205,8 @@ async function onRenameCommand(oldName, newName) {
 }
 
 async function onDeleteCommand(cmdName) {
-  if (!confirm(`Delete command "${cmdName}"?`)) return;
+  const confirmed = await askDeleteConfirmation(Homey, cmdName);
+  if (!confirmed) return;
   try {
     await callAction(Homey, { type: "deleteCommand", mac: rfState.selectedMac, cmdName });
     await loadCommands(Homey);

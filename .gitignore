@@ -26,3 +26,4 @@ env.json
 lib/Communicate.js_bak
 drivers/RM4_pro/device.js_bak
 .vscode/launch.json
+AGENTS.md
