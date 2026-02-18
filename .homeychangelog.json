@@ -175,5 +175,8 @@
   },
   "3.1.66": {
     "en": "Added a communication exception guard  and simple retry mechanism"
+  },
+  "3.1.67": {
+    "en": "Fix IR/RF command delete in App Settings."
   }
 }
