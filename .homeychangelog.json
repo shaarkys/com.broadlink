@@ -178,5 +178,8 @@
   },
   "3.1.67": {
     "en": "Fix IR/RF command delete in App Settings."
+  },
+  "3.1.68": {
+    "en": "Added RM Max (0xAF8B) support via the RM4 Pro driver"
   }
 }
