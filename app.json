@@ -4289,8 +4289,8 @@
       ],
       "id": "RM4_pro",
       "name": {
-        "en": "RM4 Pro",
-        "nl": "RM4 Pro"
+        "en": "RM4 Pro / RM Max",
+        "nl": "RM4 Pro / RM Max"
       },
       "images": {
         "large": "./drivers/RM4_pro/assets/images/large.jpg",

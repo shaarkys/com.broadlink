@@ -9,6 +9,7 @@ Use [Homey](https://www.athom.com/) together with [Broadlink devices](http://www
   The RM3 Mini is a wifi to IR (infrared) device. It can learn IR commands and transmit them.
 * [RM Pro](http://www.ibroadlink.com/rmPro)  - IR
 * [RM Pro Plus](http://www.ibroadlink.com/rmPro+)   - IR + RF
+* RM4 Pro / RM Max - IR + RF
 * SP1  - power socket switch
 * SP2  - power socket switch with nightlight and meter
 * SP3S - power socket switch with meter
