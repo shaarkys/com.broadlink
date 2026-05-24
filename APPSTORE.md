@@ -140,6 +140,10 @@ The following table lists which devices are already added as compatible to the a
                                      RM2 Pro Plus R1                 <br>
                                      RM2 Pro PP                      </td></tr>
 
+<tr><td>RM4 Pro            </td><td> RM4 Pro                         <br>
+                                     RM4C Pro                        <br>
+                                     RM Max                          </td></tr>
+
 <tr><td>A1                 </td><td> A1                              </td></tr>
 
 <tr><td>MP1                </td><td> MP1                             <br>
