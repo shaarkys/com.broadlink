@@ -115,6 +115,86 @@ body{
   background: #eff6ff;
 }
 
+.rf-row button.pronto {
+  border-color: #86efac;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.pronto-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  color: #4b5563;
+  font-size: 13px;
+}
+
+.pronto-options input {
+  width: 110px;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+}
+
+.pronto-result {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #86efac;
+  border-radius: 6px;
+  background: #f0fdf4;
+}
+
+.pronto-result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.pronto-result h3 {
+  margin: 0 0 4px;
+}
+
+.pronto-summary {
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.pronto-result textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  resize: vertical;
+  border: 1px solid #bbf7d0;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.pronto-result button.primary {
+  padding: 6px 10px;
+  border: 1px solid #86efac;
+  border-radius: 4px;
+  color: #166534;
+  background: #fff;
+  cursor: pointer;
+}
+
+.pronto-warnings {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  color: #92400e;
+  font-size: 12px;
+}
+
+.pronto-instructions {
+  margin: 10px 0 0;
+  color: #166534;
+  font-size: 12px;
+}
+
 .rf-empty {
   padding: 10px 0;
   color: #6b7280;

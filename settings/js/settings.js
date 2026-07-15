@@ -12,6 +12,7 @@ const rfState = {
   devices: [],
   selectedMac: "",
   commands: [],
+  prontoResult: null,
 };
 
 function settingsGet(Homey, key) {
@@ -101,13 +102,13 @@ function renderCommands() {
   list.innerHTML = "";
 
   if (!rfState.selectedMac) {
-    list.innerHTML = '<div class="rf-empty">Select a device to view RF commands.</div>';
+    list.innerHTML = '<div class="rf-empty">Select a device to view learned commands.</div>';
     setUsageText("");
     return;
   }
 
   if (!rfState.commands.length) {
-    list.innerHTML = '<div class="rf-empty">No RF commands stored yet. Learn a command on the device, then refresh.</div>';
+    list.innerHTML = '<div class="rf-empty">No learned commands stored yet. Learn an IR command on the device, then refresh.</div>';
     return;
   }
 
@@ -135,6 +136,12 @@ function renderCommands() {
     deleteBtn.type = "button";
     deleteBtn.addEventListener("click", () => onDeleteCommand(name));
 
+    const prontoBtn = document.createElement("button");
+    prontoBtn.textContent = "Pronto Hex";
+    prontoBtn.className = "pronto";
+    prontoBtn.type = "button";
+    prontoBtn.addEventListener("click", () => onGeneratePronto(name));
+
     input.addEventListener("keyup", (ev) => {
       if (ev.key === "Enter") {
         onRenameCommand(name, input.value.trim());
@@ -142,10 +149,37 @@ function renderCommands() {
     });
 
     actions.appendChild(saveBtn);
+    actions.appendChild(prontoBtn);
     actions.appendChild(deleteBtn);
     row.appendChild(input);
     row.appendChild(actions);
     list.appendChild(row);
+  });
+}
+
+function renderProntoResult() {
+  const panel = document.getElementById("pronto-result");
+  const output = document.getElementById("pronto-output");
+  const summary = document.getElementById("pronto-summary");
+  const warnings = document.getElementById("pronto-warnings");
+  if (!panel || !output || !summary || !warnings) return;
+
+  const result = rfState.prontoResult;
+  if (!result) {
+    panel.hidden = true;
+    output.value = "";
+    warnings.innerHTML = "";
+    return;
+  }
+
+  panel.hidden = false;
+  output.value = result.prontoHex || "";
+  summary.textContent = `${result.cmdName} · ${result.carrierHz} Hz assumed carrier · ${result.burstPairs} burst pair(s) · Homey repetitions: ${result.suggestedHomeyRepetitions}`;
+  warnings.innerHTML = "";
+  (result.warnings || []).forEach((warning) => {
+    const item = document.createElement("li");
+    item.textContent = warning;
+    warnings.appendChild(item);
   });
 }
 
@@ -190,6 +224,43 @@ async function loadCommands(Homey) {
   }
 }
 
+async function onGeneratePronto(cmdName) {
+  const carrierInput = document.getElementById("pronto-carrier");
+  const carrierHz = Number(carrierInput ? carrierInput.value : 38000);
+  try {
+    const result = await callAction(Homey, {
+      type: "generatePronto",
+      mac: rfState.selectedMac,
+      cmdName,
+      carrierHz,
+    });
+    rfState.prontoResult = result;
+    renderProntoResult();
+  } catch (err) {
+    console.error(err);
+    Homey.alert(err && err.message ? err.message : "Pronto Hex conversion failed", "error");
+  }
+}
+
+async function copyProntoOutput(Homey) {
+  const output = document.getElementById("pronto-output");
+  if (!output || !output.value) return;
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(output.value);
+    } else {
+      output.focus();
+      output.select();
+      document.execCommand("copy");
+    }
+    Homey.alert("Pronto Hex copied. Use repetitions 1 for the first Homey test.", "info");
+  } catch (err) {
+    output.focus();
+    output.select();
+    Homey.alert("Automatic copy failed. The Pronto Hex has been selected for manual copying.", "warning");
+  }
+}
+
 async function onRenameCommand(oldName, newName) {
   if (!newName || newName === oldName) {
     return;
@@ -220,10 +291,13 @@ function wireRfEvents(Homey) {
   const select = document.getElementById("rf-device-select");
   const refreshDevicesBtn = document.getElementById("rf-refresh-devices");
   const refreshCommandsBtn = document.getElementById("rf-refresh-commands");
+  const copyProntoBtn = document.getElementById("pronto-copy");
 
   if (select) {
     select.addEventListener("change", (ev) => {
       rfState.selectedMac = ev.target.value;
+      rfState.prontoResult = null;
+      renderProntoResult();
       loadCommands(Homey);
     });
   }
@@ -234,6 +308,9 @@ function wireRfEvents(Homey) {
   }
   if (refreshCommandsBtn) {
     refreshCommandsBtn.addEventListener("click", () => loadCommands(Homey));
+  }
+  if (copyProntoBtn) {
+    copyProntoBtn.addEventListener("click", () => copyProntoOutput(Homey));
   }
 }
 

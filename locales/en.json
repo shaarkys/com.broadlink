@@ -27,14 +27,21 @@
 	"select_device":"Select device",
 	"next":"Next &gt;"
   },
-  "settings":{
-  	"title": "Broadlink Debug Settings",
-  	"compatinfo": "In compatibility mode, any device found during pairing will be accepted as the selected device type. This means the device paired will be treated as the choosen device type. As a result, not all (if any) of the capablities of the device will work properly",
-  	"compatmode": "Compatibility Mode",
+  "settings": {
+    "title": "Broadlink Debug Settings",
+    "compatinfo": "In compatibility mode, any device found during pairing will be accepted as the selected device type. This means the device paired will be treated as the choosen device type. As a result, not all (if any) of the capablities of the device will work properly",
+    "compatmode": "Compatibility Mode",
     "debuginfo": "Enable this setting before sending your diagnostic report to the developer.",
-   	"debuglog" : "Log Mode",
-   	"errorreportinfo" : "Error reports using Sentry.IO",
-   	"errorreport" : "Sentry.IO"
+    "debuglog": "Log Mode",
+    "errorreportinfo": "Error reports using Sentry.IO",
+    "errorreport": "Sentry.IO",
+    "command_manager_title": "Learned command manager",
+    "command_manager_subtitle": "Manage learned commands and generate experimental Pronto Hex from IR captures.",
+    "pronto_carrier": "Pronto carrier (Hz)",
+    "pronto_carrier_hint": "38 kHz is assumed by default. Other values, including 56 kHz, are experimental.",
+    "pronto_result_title": "Pronto Hex test output",
+    "pronto_copy": "Copy Pronto Hex",
+    "pronto_instructions": "Paste this code into Homey's System → Send infrared Flow card. Use repetitions 1 for the first test. The carrier was assumed, not measured by Broadlink."
   },
   "air_quality": {
     "excellent": "excellent",

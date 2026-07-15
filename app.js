@@ -22,6 +22,7 @@ const Homey = require("homey");
 const { Device } = require("homey");
 const DataStore = require("./lib/DataStore");
 const BroadlinkUtils = require("./lib/BroadlinkUtils");
+const { broadlinkToPronto } = require("./lib/BroadlinkPronto");
 
 const DEBUG = process.env.DEBUG === "1";
 
@@ -293,6 +294,18 @@ class BroadlinkApp extends Homey.App {
             device.updateSettings();
           }
           await this.updateRfCommandsSetting(mac);
+          result.ok = true;
+          break;
+        }
+        case "generatePronto": {
+          const { mac, cmdName, carrierHz } = action;
+          if (!mac || !cmdName) {
+            throw new Error("mac and cmdName are required");
+          }
+          const { dataStore } = await this.getRfStore(mac);
+          const commandData = dataStore.getCommandData(cmdName);
+          const conversion = broadlinkToPronto(commandData, { carrierHz });
+          Object.assign(result, conversion, { cmdName });
           result.ok = true;
           break;
         }
