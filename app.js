@@ -304,7 +304,12 @@ class BroadlinkApp extends Homey.App {
           }
           const { dataStore } = await this.getRfStore(mac);
           const commandData = dataStore.getCommandData(cmdName);
+          const commandPrefix = Array.from(commandData).slice(0, 8)
+            .map((byte) => byte.toString(16).padStart(2, "0"))
+            .join(" ");
+          this.log(`[Pronto] Converting "${cmdName}": ${commandData.length} bytes, prefix ${commandPrefix}`);
           const conversion = broadlinkToPronto(commandData, { carrierHz });
+          this.log(`[Pronto] Converted "${cmdName}": format ${conversion.inputFormat}, packet offset ${conversion.packetOffset}, ${conversion.burstPairs} burst pairs, ${conversion.carrierHz} Hz`);
           Object.assign(result, conversion, { cmdName });
           result.ok = true;
           break;
@@ -314,6 +319,9 @@ class BroadlinkApp extends Homey.App {
       }
     } catch (err) {
       result.error = err.message || String(err);
+      if (action.type === "generatePronto") {
+        this.error(`[Pronto] Conversion failed for "${action.cmdName || "unknown"}": ${result.error}`);
+      }
     }
 
     await this.homey.settings.set("rfManagerResult", result);

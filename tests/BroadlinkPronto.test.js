@@ -36,6 +36,21 @@ test("converts a Broadlink IR packet to one-shot 38 kHz Pronto Hex", () => {
   assert.equal(result.suggestedHomeyRepetitions, 1);
 });
 
+test("converts an IR command stored with the Homey check-data status prefix", () => {
+  const storedCommand = Uint8Array.from([
+    0x00, 0x00,
+    0x26, 0x00, 0x06, 0x00,
+    0x10, 0x00, 0x01, 0x24, 0x92, 0x20,
+    0x0d, 0x05, 0x00, 0x00,
+  ]);
+
+  const result = broadlinkToPronto(storedCommand);
+
+  assert.equal(result.prontoHex, "0000 006D 0002 0000 0013 0152 00A9 0025");
+  assert.equal(result.inputFormat, "homey-check-data");
+  assert.equal(result.packetOffset, 2);
+});
+
 test("allows an experimental 56 kHz Pronto carrier and reports the Homey caveat", () => {
   const packet = Uint8Array.from([
     0x26, 0x00, 0x02, 0x00,
@@ -70,6 +85,10 @@ test("rejects non-IR and malformed Broadlink packets", () => {
   assert.throws(
     () => broadlinkToPronto([0xb2, 0x00, 0x02, 0x00, 0x10, 0x20]),
     /not infrared/,
+  );
+  assert.throws(
+    () => broadlinkToPronto([0x00, 0x00, 0xb2, 0x00, 0x02, 0x00, 0x10, 0x20]),
+    /received 0xb2/,
   );
   assert.throws(
     () => broadlinkToPronto([0x26, 0x00, 0x04, 0x00, 0x10, 0x20]),
