@@ -35,10 +35,6 @@ The value in this field is used when you press **Pronto Hex** next to a learned 
 
 The complete learned timing sequence is retained during conversion. Because a capture may already contain repeated frames, always start with one Homey repetition.
 
-## Conversion diagnostics
-
-Each conversion attempt automatically adds `[Pronto]` entries to the standard Homey app log. These entries include the learned Broadlink command, the detected packet format and timing information, the selected carrier, the generated Pronto Hex, warnings and conversion errors. The app's debug-log option does not need to be enabled for these conversion entries.
-
 ## Useful test report
 
 Please report only the result of these three stages:
@@ -47,4 +43,4 @@ Please report only the result of these three stages:
 2. **Convert:** Was Pronto Hex generated successfully, and which carrier value was selected?
 3. **Send:** Did **System → Send infrared** work with repetitions set to `1`? State whether the action occurred once, multiple times or not at all.
 
-If the conversion fails or the result is uncertain, create a diagnostic report for the Broadlink app using Homey's standard app diagnostic functionality. Perform the learn, convert and Homey-send test shortly before creating the report so the relevant `[Pronto]` entries are present.
+If the conversion fails or the result is uncertain, create a diagnostic report for the Broadlink app using Homey's standard app diagnostic functionality. Perform the learn, convert and Homey-send test shortly before creating the report so the relevant entries are present.
