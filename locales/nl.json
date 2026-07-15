@@ -27,14 +27,21 @@
 	"select_device":"Selecteer het apparaat",
 	"next":"Volgende &gt;"
   },
-  "settings":{
-  	"title": "Broadlink Debug Instellingen",
-  	"compatinfo": "In eenheidsmode, ieder apparaat dat gevonden wordt tijdens paren, zal geaccepteerd worden alsof het van het gewenste type is. Dit betekent dat het geinstalleerde apparaat aangesproken wordt alsof het een apparaat van dat type is. Hierdoor zullen niet alle (of zelfs geen enkele) van zijn mogelijkheden naar behoren werken.",
-   	"compatmode": "Eenheidsmode",
-   	"debuginfo": "Schakel deze instelling in voordat u uw diagnostisch rapport naar de ontwikkelaar stuurt.",
-   	"debuglog" : "Logmode",
-   	"errorreportinfo" : "Foutreporten via Sentry.IO",
-   	"errorreport" : "Sentry.IO"
+  "settings": {
+    "title": "Broadlink Debug Instellingen",
+    "compatinfo": "In eenheidsmode, ieder apparaat dat gevonden wordt tijdens paren, zal geaccepteerd worden alsof het van het gewenste type is. Dit betekent dat het geinstalleerde apparaat aangesproken wordt alsof het een apparaat van dat type is. Hierdoor zullen niet alle (of zelfs geen enkele) van zijn mogelijkheden naar behoren werken.",
+    "compatmode": "Eenheidsmode",
+    "debuginfo": "Schakel deze instelling in voordat u uw diagnostisch rapport naar de ontwikkelaar stuurt.",
+    "debuglog": "Logmode",
+    "errorreportinfo": "Foutreporten via Sentry.IO",
+    "errorreport": "Sentry.IO",
+    "command_manager_title": "Beheer van aangeleerde commando's",
+    "command_manager_subtitle": "Beheer aangeleerde commando's en genereer experimentele Pronto Hex uit IR-opnames.",
+    "pronto_carrier": "Pronto-draaggolf (Hz)",
+    "pronto_carrier_hint": "Wordt gebruikt voor de volgende Pronto Hex-conversie. Laat dit op 38000 staan tenzij de draaggolf van het bediende apparaat bekend is; andere waarden, waaronder 56000, zijn experimenteel.",
+    "pronto_result_title": "Pronto Hex-testuitvoer",
+    "pronto_copy": "Pronto Hex kopiëren",
+    "pronto_instructions": "Plak deze code in Homey's System → Infrarood verzenden Flow-kaart. Gebruik herhalingen 1 voor de eerste test. De draaggolf is aangenomen en niet door Broadlink gemeten."
   },
   "air_quality": {
     "excellent": "uitstekend",

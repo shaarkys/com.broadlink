@@ -22,6 +22,7 @@ const Homey = require("homey");
 const { Device } = require("homey");
 const DataStore = require("./lib/DataStore");
 const BroadlinkUtils = require("./lib/BroadlinkUtils");
+const { broadlinkToPronto } = require("./lib/BroadlinkPronto");
 
 const DEBUG = process.env.DEBUG === "1";
 
@@ -296,11 +297,33 @@ class BroadlinkApp extends Homey.App {
           result.ok = true;
           break;
         }
+        case "generatePronto": {
+          const { mac, cmdName, carrierHz } = action;
+          if (!mac || !cmdName) {
+            throw new Error("mac and cmdName are required");
+          }
+          const { dataStore } = await this.getRfStore(mac);
+          const commandData = dataStore.getCommandData(cmdName);
+          const commandBytes = JSON.stringify(Array.from(commandData));
+          this.log(`[Pronto] Input "${cmdName}": carrier ${carrierHz} Hz, ${commandData.length} bytes, data=${commandBytes}`);
+          const conversion = broadlinkToPronto(commandData, { carrierHz });
+          this.log(`[Pronto] Parsed "${cmdName}": format=${conversion.inputFormat}, packetOffset=${conversion.packetOffset}, pulseBytes=${conversion.pulseDataLength}, timings=${conversion.timingCount}, burstPairs=${conversion.burstPairs}, durationRange=${conversion.minDurationUs}-${conversion.maxDurationUs} us, terminator=${conversion.hasTerminator}, packetRepeats=${conversion.broadlinkRepeatCount}, longGaps=${conversion.longGapCount}`);
+          this.log(`[Pronto] Output "${cmdName}": carrier=${conversion.carrierHz} Hz, frequencyWord=0x${conversion.frequencyWord.toString(16).toUpperCase().padStart(4, "0")}, HomeyRepetitions=${conversion.suggestedHomeyRepetitions}, prontoHex=${conversion.prontoHex}`);
+          if (conversion.warnings.length > 0) {
+            this.log(`[Pronto] Warnings "${cmdName}": ${conversion.warnings.join(" | ")}`);
+          }
+          Object.assign(result, conversion, { cmdName });
+          result.ok = true;
+          break;
+        }
         default:
           throw new Error(`Unsupported action: ${action.type}`);
       }
     } catch (err) {
       result.error = err.message || String(err);
+      if (action.type === "generatePronto") {
+        this.error(`[Pronto] Conversion failed for "${action.cmdName || "unknown"}": ${result.error}`);
+      }
     }
 
     await this.homey.settings.set("rfManagerResult", result);
