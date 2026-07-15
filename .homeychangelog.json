@@ -181,5 +181,8 @@
   },
   "3.1.68": {
     "en": "Added RM Max (0xAF8B) support via the RM4 Pro driver"
+  },
+  "3.1.69": {
+    "en": "Added conversion of learned Broadlink IR commands to Pronto Hex for sending through Homey’s System infrared Flow card, including carrier selection and diagnostic logging.."
   }
 }
