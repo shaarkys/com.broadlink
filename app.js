@@ -304,12 +304,14 @@ class BroadlinkApp extends Homey.App {
           }
           const { dataStore } = await this.getRfStore(mac);
           const commandData = dataStore.getCommandData(cmdName);
-          const commandPrefix = Array.from(commandData).slice(0, 8)
-            .map((byte) => byte.toString(16).padStart(2, "0"))
-            .join(" ");
-          this.log(`[Pronto] Converting "${cmdName}": ${commandData.length} bytes, prefix ${commandPrefix}`);
+          const commandBytes = JSON.stringify(Array.from(commandData));
+          this.log(`[Pronto] Input "${cmdName}": carrier ${carrierHz} Hz, ${commandData.length} bytes, data=${commandBytes}`);
           const conversion = broadlinkToPronto(commandData, { carrierHz });
-          this.log(`[Pronto] Converted "${cmdName}": format ${conversion.inputFormat}, packet offset ${conversion.packetOffset}, ${conversion.burstPairs} burst pairs, ${conversion.carrierHz} Hz`);
+          this.log(`[Pronto] Parsed "${cmdName}": format=${conversion.inputFormat}, packetOffset=${conversion.packetOffset}, pulseBytes=${conversion.pulseDataLength}, timings=${conversion.timingCount}, burstPairs=${conversion.burstPairs}, durationRange=${conversion.minDurationUs}-${conversion.maxDurationUs} us, terminator=${conversion.hasTerminator}, packetRepeats=${conversion.broadlinkRepeatCount}, longGaps=${conversion.longGapCount}`);
+          this.log(`[Pronto] Output "${cmdName}": carrier=${conversion.carrierHz} Hz, frequencyWord=0x${conversion.frequencyWord.toString(16).toUpperCase().padStart(4, "0")}, HomeyRepetitions=${conversion.suggestedHomeyRepetitions}, prontoHex=${conversion.prontoHex}`);
+          if (conversion.warnings.length > 0) {
+            this.log(`[Pronto] Warnings "${cmdName}": ${conversion.warnings.join(" | ")}`);
+          }
           Object.assign(result, conversion, { cmdName });
           result.ok = true;
           break;

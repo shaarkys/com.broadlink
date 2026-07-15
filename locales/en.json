@@ -38,7 +38,7 @@
     "command_manager_title": "Learned command manager",
     "command_manager_subtitle": "Manage learned commands and generate experimental Pronto Hex from IR captures.",
     "pronto_carrier": "Pronto carrier (Hz)",
-    "pronto_carrier_hint": "38 kHz is assumed by default. Other values, including 56 kHz, are experimental.",
+    "pronto_carrier_hint": "Used for the next Pronto Hex conversion. Keep 38000 unless the controlled device's carrier is known; other values, including 56000, are experimental.",
     "pronto_result_title": "Pronto Hex test output",
     "pronto_copy": "Copy Pronto Hex",
     "pronto_instructions": "Paste this code into Homey's System → Send infrared Flow card. Use repetitions 1 for the first test. The carrier was assumed, not measured by Broadlink."

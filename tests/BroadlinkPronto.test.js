@@ -49,6 +49,10 @@ test("converts an IR command stored with the Homey check-data status prefix", ()
   assert.equal(result.prontoHex, "0000 006D 0002 0000 0013 0152 00A9 0025");
   assert.equal(result.inputFormat, "homey-check-data");
   assert.equal(result.packetOffset, 2);
+  assert.equal(result.pulseDataLength, 6);
+  assert.equal(result.hasTerminator, true);
+  assert.equal(result.minDurationUs, 487);
+  assert.equal(result.maxDurationUs, 8892);
 });
 
 test("allows an experimental 56 kHz Pronto carrier and reports the Homey caveat", () => {
