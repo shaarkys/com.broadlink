@@ -4296,12 +4296,14 @@
         "large": "./drivers/RM4_pro/assets/images/large.jpg",
         "small": "./drivers/RM4_pro/assets/images/small.jpg"
       },
-      "class": "other",
+      "class": "sensor",
       "capabilities": [
         "learnIRcmd",
         "learningState",
         "learnRFcmd",
         "learningStateRF",
+        "measure_humidity",
+        "measure_temperature",
         "measure_humidity_rm4",
         "measure_temperature_rm4"
       ],

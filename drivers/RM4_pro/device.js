@@ -180,6 +180,8 @@ class RM4ProDevice extends BroadlinkDevice {
       await this.addCapability("measure_temperature_rm4");
     }
 
+    await this.migrateClimateCapabilities();
+
     // reset the state just in case of new init while app starting
 
     await this.setCapabilityValue("learnIRcmd", false).catch(this.error);
@@ -226,6 +228,33 @@ class RM4ProDevice extends BroadlinkDevice {
       await this.authenticateDevice();
     }
     await this.pollTempHumidity(); // Initial poll
+  }
+
+  async migrateClimateCapabilities() {
+    const climateCapabilities = ["measure_humidity", "measure_temperature"];
+    const missingCapabilities = climateCapabilities.filter((capability) => !this.hasCapability(capability));
+    const classNeedsMigration = this.getClass() !== "sensor";
+
+    if (missingCapabilities.length === 0 && !classNeedsMigration) {
+      return;
+    }
+
+    this._utils.debugLog(this, "RM4ProDevice: migrating device to Homey Climate");
+
+    try {
+      for (const capability of missingCapabilities) {
+        await this.addCapability(capability);
+      }
+
+      if (classNeedsMigration) {
+        await this.setClass("sensor");
+      }
+
+      this._utils.debugLog(this, "RM4ProDevice: Homey Climate migration completed");
+    } catch (err) {
+      this._utils.debugLog(this, `RM4ProDevice: Homey Climate migration failed: ${err.message}`);
+      this.error("RM4ProDevice: Homey Climate migration failed", err);
+    }
   }
 
   /**
@@ -548,6 +577,8 @@ class RM4ProDevice extends BroadlinkDevice {
       const tempValue = parseFloat(`${temperature[0]}.${temperature[1]}`);
       const humidityValue = parseFloat(`${humidity[0]}.${humidity[1]}`);
 
+      await this.setCapabilityValue("measure_temperature", tempValue).catch(this.error);
+      await this.setCapabilityValue("measure_humidity", humidityValue).catch(this.error);
       await this.setCapabilityValue("measure_temperature_rm4", tempValue).catch(this.error);
       await this.setCapabilityValue("measure_humidity_rm4", humidityValue).catch(this.error);
 
