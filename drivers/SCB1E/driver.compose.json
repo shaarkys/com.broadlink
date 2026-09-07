@@ -1,0 +1,16 @@
+{
+  "id": "SCB1E",
+  "name": { "en": "SCB1E" },
+  "class": "socket",
+  "capabilities": ["onoff", "measure_power", "meter_power", "measure_voltage", "measure_current"],
+  "images": {
+    "small": "{{driverAssetsPath}}/images/small.jpg",
+    "large": "{{driverAssetsPath}}/images/large.jpg",
+    "xlarge": "{{driverAssetsPath}}/images/xlarge.jpg"
+  },
+  "pair": [
+    { "$template": "start", "id": "start" },
+    { "id": "list_devices", "template": "list_devices", "navigation": { "next": "add_devices" } },
+    { "id": "add_devices", "template": "add_devices" }
+  ]
+}

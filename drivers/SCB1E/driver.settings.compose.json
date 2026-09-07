@@ -1,0 +1,17 @@
+[
+  {
+    "type": "group",
+    "label": { "en": "Timing", "nl": "Tijdschema" },
+    "children": [{ "$extends": "checkinterval", "value": 1 }]
+  },
+  {
+    "type": "group",
+    "label": { "en": "Address", "nl": "Adres" },
+    "children": [{ "$extends": "ipaddress" }]
+  },
+  {
+    "type": "group",
+    "label": { "en": "Maintenance", "nl": "Onderhoud" },
+    "children": [{ "$extends": "authenticate" }]
+  }
+]

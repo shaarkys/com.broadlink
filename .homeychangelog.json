@@ -184,5 +184,8 @@
   },
   "3.1.69": {
     "en": "Added conversion of learned Broadlink IR commands to Pronto Hex for sending through Homey’s System infrared Flow card, including carrier selection and diagnostic logging.."
+  },
+  "3.1.70": {
+    "en": "RM4 Pro now appears in the Climate Section of Homey"
   }
 }
