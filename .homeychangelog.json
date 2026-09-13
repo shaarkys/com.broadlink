@@ -190,5 +190,8 @@
   },
   "3.1.71": {
     "en": "Added Broadlink SCB1E support with automatic SP4/SP4B detection, relay control, and power, energy, voltage, and current monitoring."
+  },
+  "3.1.72": {
+    "en": "Added support to bypass frequency sweep while learning RF on RM4 Pros (available in Broadlink app settings)."
   }
 }
