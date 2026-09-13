@@ -18,7 +18,8 @@
 		"a1_noise_level",
 		"a1_air_quality_number",
 		"a1_light_level_number",
-		"a1_noise_level_number"
+		"a1_noise_level_number",
+		"device_lock_state"
 	],
 	"pair": [
 		{

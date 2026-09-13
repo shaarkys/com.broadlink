@@ -2,7 +2,7 @@
   "id": "SCB1E",
   "name": { "en": "SCB1E" },
   "class": "socket",
-  "capabilities": ["onoff", "measure_power", "meter_power", "measure_voltage", "measure_current"],
+  "capabilities": ["onoff", "measure_power", "meter_power", "measure_voltage", "measure_current", "device_lock_state"],
   "images": {
     "small": "{{driverAssetsPath}}/images/small.jpg",
     "large": "{{driverAssetsPath}}/images/large.jpg",

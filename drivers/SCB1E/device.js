@@ -162,6 +162,7 @@ class SCB1EDevice extends BroadlinkDevice {
   }
 
   async onDeleted() {
+    this.stopLockChecks();
     this._deleted = true;
     this.stop_check_interval();
     if (this.settingsTimeout != null) this.homey.clearTimeout(this.settingsTimeout);

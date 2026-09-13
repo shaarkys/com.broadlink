@@ -11,7 +11,8 @@
 	"capabilities": [
 		"onoff.power",
 		"onoff.nightlight",
-		"measure_power"
+		"measure_power",
+		"device_lock_state"
 	],
 	"capabilitiesOptions": {
 		"onoff.power": { "title": { "en": "Switch", "nl": "Schakelaar" } },

@@ -395,6 +395,7 @@ class RM4miniDevice extends BroadlinkDevice {
    * This method will be called when a device has been removed.
    */
   onDeleted() {
+    this.stopLockChecks();
     this._utils.debugLog(this, 'Device deleted, will be deleting all commands :'+ this.getData().id);
     this.dataStore.deleteAllCommands();
     this.stop_check_interval();

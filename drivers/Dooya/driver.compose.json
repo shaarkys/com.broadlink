@@ -9,7 +9,7 @@
 		"small": "{{driverAssetsPath}}/images/small.jpg"
 	},
 	"class": "curtain",
-	"capabilities": [ "button.open", "button.close", "button.stop" ],
+	"capabilities": [ "button.open", "button.close", "button.stop", "device_lock_state" ],
 	"capabilitiesOptions": {
 		"button.open":  { "title": { "en": "Open",  "nl": "Open"  } },
 		"button.close": { "title": { "en": "Close", "nl": "Dicht" } },

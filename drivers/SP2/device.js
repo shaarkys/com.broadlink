@@ -342,6 +342,7 @@ class SP2Device extends BroadlinkDevice {
   }
 
   onDeleted() {
+    this.stopLockChecks();
     this.log("Device deleted: " + this.getData().id);
 
     if (this.checkInterval) {

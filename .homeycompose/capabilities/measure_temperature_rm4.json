@@ -6,6 +6,7 @@
         "nl": "Temperatuur"
     },
     "getable": true,
+    "uiComponent": null,
 	"insights": true,
   "icon": "/assets/temperature.svg"
 

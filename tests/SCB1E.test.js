@@ -209,6 +209,7 @@ function deviceHarness() {
     getName: () => "SCB1E",
     setSettings: async (patch) => Object.assign(settings, patch),
     setCapabilityValue: async (capability, value) => values.set(capability, value),
+    hasCapability: (capability) => capability === "device_lock_state",
     registerCapabilityListener: (capability, listener) => { device.listener = listener; },
     log: (...args) => logs.push(args),
     error: (...args) => errors.push(args),
@@ -374,7 +375,7 @@ test("first poll authenticates once for a newly paired device and retries after 
 test("SCB1E declares standard capabilities and preserves its pairing templates", () => {
   const manifest = require("../drivers/SCB1E/driver.compose.json");
   assert.equal(manifest.class, "socket");
-  assert.deepEqual(manifest.capabilities, ["onoff", "measure_power", "meter_power", "measure_voltage", "measure_current"]);
+  assert.deepEqual(manifest.capabilities, ["onoff", "measure_power", "meter_power", "measure_voltage", "measure_current", "device_lock_state"]);
   assert.deepEqual(manifest.pair.map((view) => view.id), ["start", "list_devices", "add_devices"]);
 });
 
@@ -387,11 +388,13 @@ test("initialization retains the raw type and repeated initialization replaces t
     assert.equal(Number(device._communicate.deviceType), raw);
     assert.equal(device._authenticated, true);
     assert.equal(typeof device.listener, "function");
-    assert.equal(timers.size, 1);
+    assert.equal(timers.size, 2); // One state poll and one isolated device-lock check.
+    assert.ok(timers.has(device._lockCheckTimer));
     const original = device._communicate;
     await device.onInit();
     assert.notEqual(device._communicate, original);
-    assert.equal(timers.size, 1);
+    assert.equal(timers.size, 2);
+    assert.ok(timers.has(device._lockCheckTimer));
     await device.onDeleted();
     assert.equal(timers.size, 0);
   }

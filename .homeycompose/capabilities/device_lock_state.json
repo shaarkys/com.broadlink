@@ -1,0 +1,14 @@
+{
+  "type": "enum",
+  "title": { "en": "Device lock", "nl": "Apparaatvergrendeling" },
+  "values": [
+    { "id": "locked", "title": { "en": "Locked", "nl": "Vergrendeld" } },
+    { "id": "unlocked", "title": { "en": "Unlocked", "nl": "Ontgrendeld" } },
+    { "id": "unknown", "title": { "en": "Unknown", "nl": "Onbekend" } }
+  ],
+  "getable": true,
+  "setable": false,
+  "insights": false,
+  "uiComponent": "sensor",
+  "icon": "/assets/device-lock.svg"
+}

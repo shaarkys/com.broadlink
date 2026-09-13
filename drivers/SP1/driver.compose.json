@@ -8,7 +8,7 @@
 		"small": "{{driverAssetsPath}}/images/small.jpg"
 	},
 	"class": "other",
-	"capabilities": [ "onoff" ],
+	"capabilities": [ "onoff", "device_lock_state" ],
 	"mobile": {
 		"components": [
 			{

@@ -1748,7 +1748,8 @@
         "a1_noise_level",
         "a1_air_quality_number",
         "a1_light_level_number",
-        "a1_noise_level_number"
+        "a1_noise_level_number",
+        "device_lock_state"
       ],
       "pair": [
         {
@@ -1846,7 +1847,8 @@
       "capabilities": [
         "button.open",
         "button.close",
-        "button.stop"
+        "button.stop",
+        "device_lock_state"
       ],
       "capabilitiesOptions": {
         "button.open": {
@@ -1962,7 +1964,8 @@
         "measure_temperature.outside",
         "measure_temperature",
         "target_temperature",
-        "parental_mode"
+        "parental_mode",
+        "device_lock_state"
       ],
       "capabilitiesOptions": {
         "measure_temperature.room": {
@@ -2565,7 +2568,8 @@
         "onoff.s1",
         "onoff.s2",
         "onoff.s3",
-        "onoff.s4"
+        "onoff.s4",
+        "device_lock_state"
       ],
       "capabilitiesOptions": {
         "onoff.s1": {
@@ -3233,7 +3237,8 @@
       "class": "other",
       "capabilities": [
         "learnIRcmd",
-        "learningState"
+        "learningState",
+        "device_lock_state"
       ],
       "pair": [
         {
@@ -3766,7 +3771,8 @@
       "class": "other",
       "capabilities": [
         "learnIRcmd",
-        "learningState"
+        "learningState",
+        "device_lock_state"
       ],
       "pair": [
         {
@@ -4305,7 +4311,8 @@
         "measure_humidity",
         "measure_temperature",
         "measure_humidity_rm4",
-        "measure_temperature_rm4"
+        "measure_temperature_rm4",
+        "device_lock_state"
       ],
       "pair": [
         {
@@ -4838,7 +4845,8 @@
       "class": "other",
       "capabilities": [
         "learnIRcmd",
-        "learnRFcmd"
+        "learnRFcmd",
+        "device_lock_state"
       ],
       "mobile": {
         "components": [
@@ -5391,7 +5399,8 @@
       "class": "other",
       "capabilities": [
         "learnIRcmd",
-        "learnRFcmd"
+        "learnRFcmd",
+        "device_lock_state"
       ],
       "mobile": {
         "components": [
@@ -5441,7 +5450,8 @@
         "measure_power",
         "meter_power",
         "measure_voltage",
-        "measure_current"
+        "measure_current",
+        "device_lock_state"
       ],
       "images": {
         "small": "/drivers/SCB1E/assets/images/small.jpg",
@@ -5541,7 +5551,8 @@
       },
       "class": "other",
       "capabilities": [
-        "onoff"
+        "onoff",
+        "device_lock_state"
       ],
       "mobile": {
         "components": [
@@ -5626,7 +5637,8 @@
       "capabilities": [
         "onoff.power",
         "onoff.nightlight",
-        "measure_power"
+        "measure_power",
+        "device_lock_state"
       ],
       "capabilitiesOptions": {
         "onoff.power": {
@@ -5769,7 +5781,8 @@
       "capabilities": [
         "onoff.power",
         "onoff.nightlight",
-        "measure_power"
+        "measure_power",
+        "device_lock_state"
       ],
       "capabilitiesOptions": {
         "onoff.power": {
@@ -6086,6 +6099,41 @@
       "uiComponent": null,
       "insights": true
     },
+    "device_lock_state": {
+      "type": "enum",
+      "title": {
+        "en": "Device lock",
+        "nl": "Apparaatvergrendeling"
+      },
+      "values": [
+        {
+          "id": "locked",
+          "title": {
+            "en": "Locked",
+            "nl": "Vergrendeld"
+          }
+        },
+        {
+          "id": "unlocked",
+          "title": {
+            "en": "Unlocked",
+            "nl": "Ontgrendeld"
+          }
+        },
+        {
+          "id": "unknown",
+          "title": {
+            "en": "Unknown",
+            "nl": "Onbekend"
+          }
+        }
+      ],
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor",
+      "icon": "/assets/device-lock.svg"
+    },
     "learningState": {
       "type": "boolean",
       "title": {
@@ -6172,6 +6220,7 @@
         "nl": "Vochtigheid"
       },
       "getable": true,
+      "uiComponent": null,
       "insights": true,
       "icon": "/assets/humidity.svg"
     },
@@ -6183,6 +6232,7 @@
         "nl": "Temperatuur"
       },
       "getable": true,
+      "uiComponent": null,
       "insights": true,
       "icon": "/assets/temperature.svg"
     },

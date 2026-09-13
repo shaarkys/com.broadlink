@@ -8,7 +8,7 @@
     "small": "{{driverAssetsPath}}/images/small.jpg"
   },
   "class": "other",
-  "capabilities": ["onoff.s1", "onoff.s2", "onoff.s3", "onoff.s4"],
+  "capabilities": ["onoff.s1", "onoff.s2", "onoff.s3", "onoff.s4", "device_lock_state"],
   "capabilitiesOptions": {
     "onoff.s1": { "title": { "en": "Switch 1", "nl": "Schakelaar 1" } },
     "onoff.s2": { "title": { "en": "Switch 2", "nl": "Schakelaar 2" } },

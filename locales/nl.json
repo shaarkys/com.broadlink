@@ -1,5 +1,6 @@
 {
   "errors": {
+    "device_locked": "Dit apparaat meldt dat het vergrendeld is. Open de apparaatinstellingen in de Broadlink-app en schakel Apparaat vergrendelen uit om Homey toegang te geven. De waarschuwing verdwijnt na een ontgrendeld antwoord (controle ongeveer elke minuut).",
     "sending timeout": "Kan geen bericht naar apparaat sturen: antwoord niet op tijd ontvangen",
     "decrypt_payload": "Kan anwoord niet ontsleutelen: geen data in bericht.",
     "decrypt_keylength": "Kan anwoord niet ontsleutelen: foutive sleutel lengte.",

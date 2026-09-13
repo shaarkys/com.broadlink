@@ -424,6 +424,7 @@ class RM3miniDevice extends BroadlinkDevice {
    * This method will be called when a device has been removed.
    */
   onDeleted() {
+    this.stopLockChecks();
     this._utils.debugLog(this, 'Device deleted, will be deleting all commands :'+ this.getData().id);
     this.dataStore.deleteAllCommands();
     if (this.homey?.app && typeof this.homey.app.unregisterRfDevice === "function") {

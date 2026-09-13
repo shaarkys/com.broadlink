@@ -6,6 +6,7 @@
         "nl": "Vochtigheid"
     },
     "getable": true,
+    "uiComponent": null,
 	"insights": true,
   "icon": "/assets/humidity.svg"
 

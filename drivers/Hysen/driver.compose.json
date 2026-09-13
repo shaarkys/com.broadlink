@@ -14,7 +14,8 @@
 		"measure_temperature.outside",
 		"measure_temperature",
 		"target_temperature",
-		"parental_mode"
+		"parental_mode",
+		"device_lock_state"
 	],
 	"capabilitiesOptions": {
 		"measure_temperature.room": { "title": { "en": "Room", "nl": "Binnen" } },

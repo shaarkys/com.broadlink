@@ -11,7 +11,8 @@
   "class": "other",
   "capabilities": [
     "learnIRcmd",
-    "learningState"
+    "learningState",
+    "device_lock_state"
   ],
   "pair": [
     {

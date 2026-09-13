@@ -1,5 +1,6 @@
 {
   "errors": {
+    "device_locked": "This device reports that it is locked. In the Broadlink app, open the device settings and turn off Lock device to allow Homey access. The warning clears after an unlocked reply (checks run about once a minute).",
     "sending timeout": "Timeout while sending message to device: device did not respond in time",
     "decrypt_payload": "Cannot decrypt response: no payload.",
     "decrypt_keylength": "Cannot decrypt response: invalid key length.",
