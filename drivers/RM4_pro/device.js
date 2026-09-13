@@ -477,10 +477,15 @@ class RM4ProDevice extends BroadlinkDevice {
 
   async onCapabilityLearnRF(onoff) {
     this._utils.debugLog(this, `onCapabilityLearnRF called with onoff: ${onoff}`);
+    return this.startRfLearning();
+  }
+
+  async startRfLearning(frequencyMHz = 0) {
     if (this.learn) {
       // Already learning, no need to restart
       return true;
     }
+    let frequencyBytes = this._communicate.encodeRFFrequency_rm4pro(frequencyMHz);
     this.learn = true;
     this.setCapabilityValue("learningStateRF", true).catch(this.error);
 
@@ -489,15 +494,19 @@ class RM4ProDevice extends BroadlinkDevice {
       try {
         var data;
 
-        await this._communicate.enterRFSweep_rm4pro();
-
-        if (this.isSpeechOutputAvailable()) {
-          await this.homey.speechOutput.say(this.homey.__("rf_learn.long_press"));
+        if (frequencyBytes) {
+          this._utils.debugLog(this, `Manual RF learning at ${frequencyMHz} MHz; skipping frequency sweep`);
         } else {
-          setTimeout(async () => { await this.setWarning(this.homey.__("rf_learn.long_press")); setTimeout(async () => { await this.unsetWarning(); }, 6000); }, 0);
-        }
+          await this._communicate.enterRFSweep_rm4pro();
 
-        const frequencyBytes = await this._communicate.checkRFData_rm4pro();
+          if (this.isSpeechOutputAvailable()) {
+            await this.homey.speechOutput.say(this.homey.__("rf_learn.long_press"));
+          } else {
+            setTimeout(async () => { await this.setWarning(this.homey.__("rf_learn.long_press")); setTimeout(async () => { await this.unsetWarning(); }, 6000); }, 0);
+          }
+
+          frequencyBytes = await this._communicate.checkRFData_rm4pro();
+        }
         let frequency =
           (frequencyBytes[0] | (frequencyBytes[1] << 8) | (frequencyBytes[2] << 16) | (frequencyBytes[3] << 24)) / 1000.0;
           
@@ -574,8 +583,8 @@ class RM4ProDevice extends BroadlinkDevice {
   async pollTempHumidity() {
     try {
       const { temperature, humidity } = await this._communicate.checkTempHumidity_rm4pro();
-      const tempValue = parseFloat(`${temperature[0]}.${temperature[1]}`);
-      const humidityValue = parseFloat(`${humidity[0]}.${humidity[1]}`);
+      const tempValue = temperature[0] + temperature[1] / 100;
+      const humidityValue = humidity[0] + humidity[1] / 100;
 
       await this.setCapabilityValue("measure_temperature", tempValue).catch(this.error);
       await this.setCapabilityValue("measure_humidity", humidityValue).catch(this.error);

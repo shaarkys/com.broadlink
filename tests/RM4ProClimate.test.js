@@ -64,9 +64,9 @@ test("RM4 Pro polling updates standard and legacy climate capabilities", async (
   await RM4ProDevice.prototype.pollTempHumidity.call(device);
 
   assert.deepEqual(values, [
-    ["measure_temperature", 21.5],
-    ["measure_humidity", 47.3],
-    ["measure_temperature_rm4", 21.5],
-    ["measure_humidity_rm4", 47.3],
+    ["measure_temperature", 21.05],
+    ["measure_humidity", 47.03],
+    ["measure_temperature_rm4", 21.05],
+    ["measure_humidity_rm4", 47.03],
   ]);
 });

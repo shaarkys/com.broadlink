@@ -94,6 +94,38 @@ function renderDeviceSelect() {
   if (rfState.selectedMac) {
     select.value = rfState.selectedMac;
   }
+  renderRfLearning();
+}
+
+function renderRfLearning() {
+  const panel = document.getElementById("rf-learning");
+  const device = rfState.devices.find((entry) => entry.mac === rfState.selectedMac);
+  if (panel) panel.hidden = device?.driverId !== "RM4_pro";
+  const status = document.getElementById("rf-learn-status");
+  if (status) status.textContent = "";
+}
+
+async function onLearnRF(Homey) {
+  const input = document.getElementById("rf-frequency");
+  const button = document.getElementById("rf-learn");
+  const status = document.getElementById("rf-learn-status");
+  if (!input.reportValidity()) return;
+  const frequencyMHz = input.value.trim() === "" ? 0 : Number(input.value);
+  const selectedMac = rfState.selectedMac;
+  button.disabled = true;
+  status.textContent = "Starting RF learning…";
+  try {
+    await callAction(Homey, { type: "learnRF", mac: selectedMac, frequencyMHz });
+    if (rfState.selectedMac === selectedMac) {
+      status.textContent = frequencyMHz
+        ? `Learning started at ${frequencyMHz} MHz. Press the remote button repeatedly. Follow the device's learning status, then refresh commands after learning finishes.`
+        : "Automatic scanning started. Hold the remote button, then follow the device's learning instructions. Refresh commands after learning finishes.";
+    }
+  } catch (err) {
+    if (rfState.selectedMac === selectedMac) status.textContent = err.message || "Could not start RF learning.";
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderCommands() {
@@ -292,11 +324,13 @@ function wireRfEvents(Homey) {
   const refreshDevicesBtn = document.getElementById("rf-refresh-devices");
   const refreshCommandsBtn = document.getElementById("rf-refresh-commands");
   const copyProntoBtn = document.getElementById("pronto-copy");
+  const learnRfBtn = document.getElementById("rf-learn");
 
   if (select) {
     select.addEventListener("change", (ev) => {
       rfState.selectedMac = ev.target.value;
       rfState.prontoResult = null;
+      renderRfLearning();
       renderProntoResult();
       loadCommands(Homey);
     });
@@ -311,6 +345,9 @@ function wireRfEvents(Homey) {
   }
   if (copyProntoBtn) {
     copyProntoBtn.addEventListener("click", () => copyProntoOutput(Homey));
+  }
+  if (learnRfBtn) {
+    learnRfBtn.addEventListener("click", () => onLearnRF(Homey));
   }
 }
 

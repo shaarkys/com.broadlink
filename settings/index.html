@@ -45,6 +45,15 @@
         <select id="rf-device-select"></select>
         <span id="rf-usage" class="rf-usage"></span>
       </div>
+      <div id="rf-learning" hidden>
+        <div class="rf-toolbar">
+          <label for="rf-frequency">RF frequency (MHz)</label>
+          <input id="rf-frequency" type="number" min="0" max="440" step="0.001" placeholder="Automatic, or e.g. 433.92">
+          <button id="rf-learn" type="button">Learn RF</button>
+        </div>
+        <p class="rf-hint">Leave blank for automatic scanning, or enter a frequency to skip scanning and capture repeated short presses. Supported ranges: 305–335 and 430–440 MHz, depending on your RM4 Pro model.</p>
+        <p id="rf-learn-status" role="status"></p>
+      </div>
       <div class="pronto-options">
         <label for="pronto-carrier" data-i18n="settings.pronto_carrier"></label>
         <input id="pronto-carrier" type="number" min="10000" max="100000" step="1000" value="38000">

@@ -263,6 +263,19 @@ class BroadlinkApp extends Homey.App {
           await this.updateRfCommandsSetting(action.mac);
           result.ok = true;
           break;
+        case "learnRF": {
+          const device = this._rfDevices.get(action.mac);
+          const driverId = device?.driver?.id || device?.getDriver()?.id;
+          if (driverId !== "RM4_pro" || typeof device.startRfLearning !== "function") {
+            throw new Error("Select an available RM4 Pro to learn RF commands.");
+          }
+          if (device.learn) throw new Error("This device is already learning a command.");
+          await device.startRfLearning(action.frequencyMHz ?? 0);
+          // The device completes learning asynchronously; this acknowledges startup only.
+          result.started = true;
+          result.ok = true;
+          break;
+        }
         case "renameCommand": {
           const { mac, oldName, newName } = action;
           if (!mac || !oldName || !newName) {
