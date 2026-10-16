@@ -222,6 +222,7 @@ test("all Broadlink drivers inherit detection, and overridden deletion handlers 
     const device = {
       stopLockChecks: () => stopped++,
       stop_check_interval() {},
+      onUninit() { return Device.prototype.onUninit.call(this); },
       _utils: { debugLog() {} },
       _communicate: { destroy() {} },
       _operationQueue: Promise.resolve(),

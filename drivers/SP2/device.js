@@ -18,8 +18,6 @@
 
 "use strict";
 
-const Homey = require("homey");
-const BroadlinkUtils = require("./../../lib/BroadlinkUtils.js");
 const BroadlinkDevice = require("./../../lib/BroadlinkDevice");
 
 class SP2Device extends BroadlinkDevice {
@@ -47,307 +45,272 @@ class SP2Device extends BroadlinkDevice {
     }
   }
 
-  async onCheckInterval() {
-    try {
-      // this._utils.debugLog(this, "onCheckInterval called");
-      let energy = await this.get_energy();
-
-      if (isNaN(energy)) {
-        throw new Error("Energy is not a valid number");
-      }
-      
-      this._utils.debugLog(this, `Energy reading from interval: ${energy} W.`);
-      this.setCapabilityValue("measure_power", energy);
-
-      let response = await this._communicate.read_status();
-
-      let state = response[0] == 2 || response[0] == 3;
-      this.generate_trigger_nightlight(state);
-      this.setCapabilityValue("onoff.nightlight", state);
-
-      state = response[0] == 1 || response[0] == 3;
-      this.generate_trigger_power(state);
-      this.setCapabilityValue("onoff.power", state);
-    } catch (e) {
-      this.error("Error in onCheckInterval", e);
-    }
+  _enqueue(operation) {
+    const pending = (this._operationQueue || Promise.resolve()).then(() => {
+      if (this._deleted) throw new Error("SP2/SP3S device has been stopped");
+      return operation();
+    });
+    this._operationQueue = pending.catch(() => {});
+    return pending;
   }
 
-  async get_energy() {
-    let _lastValidEnergy; // Local variable for this method
-
-    try {
-      let response = await this._communicate.sp2_get_energy();
-
-      // Extract the 2nd, 3rd, 4th, and 5th bytes and convert to hexadecimal strings
-      let secondHex = response[1].toString(16).padStart(2, "0");
-      let thirdHex = response[2].toString(16).padStart(2, "0");
-      let fourthHex = response[3].toString(16).padStart(2, "0");
-      let fifthHex = response[4].toString(16).padStart(2, "0");
-
-      // Combine the hex values correctly as strings
-      let energyStr = `${fifthHex}${fourthHex}${thirdHex}.${secondHex}`;
-
-      this._utils.debugLog(this, `Combined energy string: ${energyStr}`);
-
-      // Convert the combined string to float
-      let energy = parseFloat(energyStr);
-
-      // Ensure the returned energy is a valid number
-      if (isNaN(energy)) {
-        this.error("Calculated energy is not a valid number:", energy);
-        return _lastValidEnergy; // Return the last known valid energy value
+  _withAuthentication(operation) {
+    return this._enqueue(async () => {
+      if (!this._authenticated) await this.authenticateDevice();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (this._deleted) throw new Error("SP2/SP3S device has been stopped");
+        try {
+          return await operation();
+        } catch (err) {
+          if (err.code !== -7) throw err;
+          this._authenticated = false;
+          if (attempt === 1) throw err;
+          this.log("SP2/SP3S control key expired; authenticating and retrying once");
+          await this.authenticateDevice();
+        }
       }
-
-      _lastValidEnergy = energy; // Update the last known valid energy value
-      return energy;
-    } catch (e) {
-      this.error("Error in get_energy", e);
-      return _lastValidEnergy; // Return the last known valid energy value in case of error
-    }
+    });
   }
 
-  /**
-   * Returns the night light state of the smart plug.
-   */
-  async check_nightlight() {
-    try {
-      let response = await this._communicate.read_status();
+  async authenticateDevice() {
+    this._authenticated = false;
+    const communication = this._communicate;
+    communication.configure({
+      ipAddress: communication.ipAddress,
+      mac: this._utils.hexToArr(this.getData().mac),
+      // Discovery stores devtype as a decimal string, not hexadecimal.
+      deviceType: Number(this.getData().devtype),
+      count: Math.floor(Math.random() * 0xffff),
+      key: null,
+      id: null,
+      homey: this.homey,
+    });
+    this.log(`SP2/SP3S authenticating type 0x${communication.deviceType.toString(16)}`);
+    const authentication = await communication.auth();
+    if (this._deleted) throw new Error("SP2/SP3S device has been stopped");
+    if (!authentication || !authentication.key || authentication.key.length !== 16 || !authentication.id || authentication.id.length !== 4) {
+      throw new Error("Invalid SP2/SP3S authentication session");
+    }
+    await this.setSettings({
+      key: this._utils.arrToHex(authentication.key),
+      id: this._utils.arrToHex(authentication.id),
+    });
+    this._authenticated = true;
+    this.log("SP2/SP3S authentication completed and session saved");
+  }
+
+  onAdded() {
+    return this._withAuthentication(async () => {});
+  }
+
+  onCheckInterval() {
+    if (this._deleted) return Promise.resolve();
+    if (this._pollPromise) {
+      this.log("SP2/SP3S polling skipped; a poll is already pending");
+      return this._pollPromise;
+    }
+    this._pollPromise = this._withAuthentication(async () => {
+      const response = await this._communicate.read_status();
+      if (this._deleted) return;
+      const nightlight = response[0] == 2 || response[0] == 3;
+      this.generate_trigger_nightlight(nightlight);
+      await this.setCapabilityValue("onoff.nightlight", nightlight);
+      if (this._deleted) return;
+      const power = response[0] == 1 || response[0] == 3;
+      this.generate_trigger_power(power);
+      await this.setCapabilityValue("onoff.power", power);
+      if (this._deleted) return;
+      // An unavailable energy reading must not prevent switch-state polling.
+      try {
+        const energy = await this._readEnergy();
+        if (!this._deleted) await this.setCapabilityValue("measure_power", energy);
+      } catch (err) {
+        if (err.code === -7) throw err;
+        this.error("SP2/SP3S energy reading failed; keeping last valid value", err);
+      }
+    }).catch((err) => {
+      if (!this._deleted) this.error("Error in onCheckInterval", err);
+    }).finally(() => { this._pollPromise = null; });
+    return this._pollPromise;
+  }
+
+  get_energy() {
+    return this._withAuthentication(() => this._readEnergy());
+  }
+
+  async _readEnergy() {
+    const response = await this._communicate.sp2_get_energy();
+    if (!response || response.length < 5) throw new Error("Invalid energy response from device");
+    // Preserve the existing energy conversion for SP2/SP3S.
+    const secondHex = response[1].toString(16).padStart(2, "0");
+    const thirdHex = response[2].toString(16).padStart(2, "0");
+    const fourthHex = response[3].toString(16).padStart(2, "0");
+    const fifthHex = response[4].toString(16).padStart(2, "0");
+    const energy = parseFloat(`${fifthHex}${fourthHex}${thirdHex}.${secondHex}`);
+    if (!Number.isFinite(energy)) throw new Error("Energy is not a valid number");
+    return energy;
+  }
+
+  /** Returns the night light state of the smart plug. */
+  check_nightlight() {
+    return this._withAuthentication(async () => {
+      const response = await this._communicate.read_status();
       return response[0] == 2 || response[0] == 3;
-    } catch (e) {
-      this.error("Error in check_nightlight", e);
-      return false;
-    }
+    });
   }
 
-  /**
-   *
-   */
   async adjust_nightlight(state) {
-    let onoff = await this.check_power();
-    let level = 0;
-    if (onoff) {
-      level = state ? 3 : 1;
-    } else {
-      level = state ? 2 : 0;
-    }
-    await this._communicate.setPowerState(level);
+    const response = await this._communicate.read_status();
+    if (this._deleted) throw new Error("SP2/SP3S device has been stopped");
+    const power = response[0] == 1 || response[0] == 3;
+    await this._communicate.setPowerState((state ? 2 : 0) | (power ? 1 : 0));
     return true;
   }
 
-  /**
-   * Returns the power state of the smart plug.
-   */
-  async check_power() {
-    try {
-      let response = await this._communicate.read_status();
-      this._utils.debugLog(this, `Power status response: ${response}`);
+  /** Returns the power state of the smart plug. */
+  check_power() {
+    return this._withAuthentication(async () => {
+      const response = await this._communicate.read_status();
       return response[0] == 1 || response[0] == 3;
-    } catch (e) {
-      this.error("Error in check_power", e);
-      return false;
-    }
+    });
   }
 
-  /**
-   * Sets the power state of the smart plug.
-   */
+  /** Sets the power state of the smart plug, preserving its night light. */
   async adjust_power(state) {
-    this._utils.debugLog(this, `adjust_power called with state: ${state}`);
-    let onoff = await this.check_nightlight();
-    let level = 0;
-    if (onoff) {
-      level = state ? 3 : 2;
-    } else {
-      level = state ? 1 : 0;
-    }
-    await this._communicate.setPowerState(level);
+    const response = await this._communicate.read_status();
+    if (this._deleted) throw new Error("SP2/SP3S device has been stopped");
+    const nightlight = response[0] == 2 || response[0] == 3;
+    await this._communicate.setPowerState((nightlight ? 2 : 0) | (state ? 1 : 0));
     return true;
   }
 
-  /**
-   *
-   */
-  async set_power(mode) {
-    this.generate_trigger_power(mode);
-    try {
+  set_power(mode) {
+    return this._withAuthentication(async () => {
       await this.adjust_power(mode);
-    } catch (e) {
-      this.error("Error in set_power", e);
-    }
+      if (this._deleted) return;
+      this.generate_trigger_power(mode);
+      await this.setCapabilityValue("onoff.power", mode);
+    });
   }
 
-  /**
-   *
-   */
-  async set_nightlight(mode) {
-    this.generate_trigger_nightlight(mode);
-    try {
-      this.adjust_nightlight(mode);
-    } catch (e) {
-      this.error("Error in set_nightlight", e);
-    }
+  set_nightlight(mode) {
+    return this._withAuthentication(async () => {
+      await this.adjust_nightlight(mode);
+      if (this._deleted) return;
+      this.generate_trigger_nightlight(mode);
+      await this.setCapabilityValue("onoff.nightlight", mode);
+    });
   }
 
   check_condition_power_on() {
-    return Promise.resolve(this.check_power());
+    return this.check_power();
   }
 
   check_condition_nightlight_on() {
-    return Promise.resolve(this.check_nightlight());
+    return this.check_nightlight();
   }
 
-  do_action_power_on() {
-    this.set_power(true);
-    this.setCapabilityValue("onoff.power", true);
-    this.get_energy()
-      .then(energy => {
-        this._utils.debugLog(this, `Energy reading: ${energy}`);
-        if (typeof energy === 'number') {
-          this.setCapabilityValue("measure_power", energy);
-        } else {
-          this._utils.debugLog(this, "Invalid energy reading, not updating measure_power");
-        }
-      })
-      .catch(err => {
-        this._utils.debugLog(this, "Error fetching energy reading:", err);
-      });
-    return Promise.resolve(true);
-  } 
-
-  do_action_power_off() {
-    this.set_power(false);
-    this.setCapabilityValue("onoff.power", false);
-    this.get_energy()
-      .then(energy => {
-        this._utils.debugLog(this, `Energy reading: ${energy}`);
-        if (typeof energy === 'number') {
-          this.setCapabilityValue("measure_power", energy);
-        } else {
-          this._utils.debugLog(this, "Invalid energy reading, not updating measure_power");
-        }
-      })
-      .catch(err => {
-        this._utils.debugLog(this, "Error fetching energy reading:", err);
-      });
-    return Promise.resolve(true);
+  async do_action_power_on() {
+    await this.set_power(true);
+    this.onCheckInterval();
+    return true;
   }
 
-  do_action_nightlight_on() {
-    this.set_nightlight(true);
-    this.setCapabilityValue("onoff.nightlight", true);
-    return Promise.resolve(true);
+  async do_action_power_off() {
+    await this.set_power(false);
+    this.onCheckInterval();
+    return true;
   }
 
-  do_action_nightlight_off() {
-    this.set_nightlight(false);
-    this.setCapabilityValue("onoff.nightlight", false);
-    return Promise.resolve(true);
+  async do_action_nightlight_on() {
+    await this.set_nightlight(true);
+    return true;
+  }
+
+  async do_action_nightlight_off() {
+    await this.set_nightlight(false);
+    return true;
   }
 
   onCapabilityPowerOnOff(mode) {
-    this.set_power(mode);
-    return Promise.resolve();
+    return this.set_power(mode);
   }
 
   onCapabilityNightLightOnOff(mode) {
-    this.set_nightlight(mode);
-    return Promise.resolve();
+    return this.set_nightlight(mode);
   }
 
   async onInit() {
+    if (this._communicate) await this.onUninit();
+    this._deleted = false;
+    this._operationQueue = Promise.resolve();
+    this._pollPromise = null;
     await super.onInit();
-
-    this._utils.debugLog(this, "SP2/SP3 Device onInit called");
-
+    if (this._deleted) return;
+    const settings = this.getSettings();
+    this._authenticated = /^[0-9a-f]{32}$/i.test(settings.key || "") && /^[0-9a-f]{8}$/i.test(settings.id || "");
     this.registerCapabilityListener("onoff.power", this.onCapabilityPowerOnOff.bind(this));
     this.registerCapabilityListener("onoff.nightlight", this.onCapabilityNightLightOnOff.bind(this));
-
-    this._utils.debugLog(this, "Capability listeners registered");
-
-    try {
-      // Read the interval value from settings
-      const settings = this.getSettings();
-      let checkIntervalMinutes;
-
-      if (typeof settings["CheckInterval"] === "number") {
-        this._utils.debugLog(this, `Polling interval is set: ${settings["CheckInterval"]} minutes`);
-        checkIntervalMinutes = parseInt(settings["CheckInterval"], 10); // Safely parse it to an integer
-      } else {
-        // Default value set if CheckInterval is not defined or is incorrectly set
-        await this.setSettings({ CheckInterval: 5 }); // Use await to ensure settings are applied (5 minutes)
-        this._utils.debugLog(this, "Polling interval was undefined, set to default: 5 minutes");
-        checkIntervalMinutes = 5; // Set interval to default after ensuring settings are applied
-      }
-
-      const checkIntervalMillis = checkIntervalMinutes * 60 * 1000; // Convert minutes to milliseconds
-
-      this._utils.debugLog(this, `Check interval set to ${checkIntervalMinutes} minutes (${checkIntervalMillis} milliseconds)`);
-
-      // Set up interval to check power readings based on the interval from settings
-      this.checkInterval = setInterval(this.onCheckInterval.bind(this), checkIntervalMillis);
-
-      // Initial call to get power readings
-      this._utils.debugLog(this, "Initial call to onCheckInterval");
-      this.onCheckInterval();
-    } catch (e) {
-      this.error("Error during onInit", e);
-    }
+    const interval = Number.isFinite(settings.CheckInterval) && settings.CheckInterval >= 1 && settings.CheckInterval <= 3600 ? settings.CheckInterval : 5;
+    if (interval !== settings.CheckInterval) await this.setSettings({ CheckInterval: interval });
+    if (this._deleted) return;
+    this.start_check_interval(interval);
   }
 
-  async onSettings({ oldSettings, newSettings, changedKeys }) {
-    if (changedKeys.length > 0) {
-      try {
-        this._utils.debugLog(this, "Settings changed:", changedKeys);
+  start_check_interval(interval) {
+    if (!Number.isFinite(interval) || interval < 1 || interval > 3600) throw new Error("Polling interval must be between 1 and 3600 minutes");
+    const replacing = this.checkTimer != null || Boolean(this._pollPromise);
+    this.stop_check_interval();
+    this.log(`SP2/SP3S polling ${replacing ? "replaced" : "started"}: ${interval} minutes`);
+    const generation = this._pollGeneration;
+    const schedule = (delay) => {
+      this.checkTimer = this.homey.setTimeout(async () => {
+        this.checkTimer = null;
+        await this.onCheckInterval();
+        if (!this._deleted && generation === this._pollGeneration) schedule(interval * 60000);
+      }, delay);
+    };
+    schedule(0);
+  }
 
-        changedKeys.forEach((key) => {
-          this._utils.debugLog(
-            this,
-            `Changed setting key: ${key}, Old value: ${oldSettings[key]}, New value: ${newSettings[key]}`
-          );
+  stop_check_interval() {
+    if (this.checkTimer != null || this._pollPromise) this.log("SP2/SP3S polling cancelled");
+    this._pollGeneration = (this._pollGeneration || 0) + 1;
+    if (this.checkTimer != null) this.homey.clearTimeout(this.checkTimer);
+    this.checkTimer = null;
+  }
 
-          if (key === "ipAddress" && newSettings.ipAddress) {
-            this._utils.debugLog(this, `Updating IP address to ${newSettings.ipAddress}`);
-            this._communicate.setIPaddress(newSettings.ipAddress);
-          }
-          if (key === "CheckInterval" && newSettings.CheckInterval) {
-            this._utils.debugLog(this, `Updating CheckInterval to ${newSettings.CheckInterval}`);
-            this.stop_check_interval();
-            this.start_check_interval(newSettings.CheckInterval);
-          }
-          if (key === "Authenticate") {
-            this._utils.debugLog(this, "Re-authenticating device due to settings change");
-            let deviceData = this.getData();
-            let options = {
-              ipAddress: this.getSettings().ipAddress,
-              mac: this._utils.hexToArr(deviceData.mac),
-              count: Math.floor(Math.random() * 0xffff),
-              id: null,
-              key: null,
-              homey: this.homey,
-              deviceType: parseInt(deviceData.devtype, 16),
-            };
-            this._communicate.configure(options);
-            this.authenticateDevice();
-          }
-        });
-      } catch (err) {
-        this._utils.debugLog(this, "Error handling settings change: ", err);
-        throw new Error("Settings could not be updated: " + err.message);
+  async onSettings({ newSettings, changedKeys }) {
+    await this._enqueue(async () => {
+      if (changedKeys.includes("ipAddress")) this._communicate.setIPaddress(newSettings.ipAddress);
+      if (changedKeys.includes("Authenticate") && newSettings.Authenticate) {
+        await this.authenticateDevice();
+        if (this._deleted) return;
+        // Homey commits the submitted settings after this handler resolves.
+        if (this.settingsTimeout != null) this.homey.clearTimeout(this.settingsTimeout);
+        this.settingsTimeout = this.homey.setTimeout(() => {
+          this.settingsTimeout = null;
+          if (!this._deleted) this.setSettings({ Authenticate: false }).catch((err) => this.error("Resetting authentication setting failed", err));
+        }, 100);
       }
-      this.log("Broadlink settings changed:\n", changedKeys);
-    } else {
-      this.log("No settings were changed");
-    }
+    });
+    if (!this._deleted && changedKeys.includes("CheckInterval")) this.start_check_interval(newSettings.CheckInterval);
+  }
+
+  async onUninit() {
+    this._deleted = true;
+    this.stopLockChecks();
+    this.stop_check_interval();
+    if (this.settingsTimeout != null) this.homey.clearTimeout(this.settingsTimeout);
+    this.settingsTimeout = null;
+    // Finish the bounded active request before destroying its transport.
+    await this._operationQueue;
+    if (this._communicate) this._communicate.destroy();
+    this._communicate = null;
   }
 
   onDeleted() {
-    this.stopLockChecks();
-    this.log("Device deleted: " + this.getData().id);
-
-    if (this.checkInterval) {
-      clearInterval(this.checkInterval);
-    }
+    return this.onUninit();
   }
 }
 
