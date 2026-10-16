@@ -196,5 +196,8 @@
   },
   "3.1.73": {
     "en": "Added automatic Broadlink device-lock detection with a warning explaining how to unlock the device for Homey access."
+  },
+  "3.1.74": {
+    "en": "Fixed SP2/SP3S re-authentication, expired-session recovery, and command error reporting."
   }
 }
