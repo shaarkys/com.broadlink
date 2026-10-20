@@ -219,7 +219,7 @@ test("all Broadlink drivers inherit detection, and overridden deletion handlers 
   for (const [id, Device] of Object.entries(devices)) {
     assert.equal(typeof Device.prototype.startLockChecks, "function", id);
     let stopped = 0;
-    const device = {
+    const device = Object.assign(Object.create(Device.prototype), {
       stopLockChecks: () => stopped++,
       stop_check_interval() {},
       onUninit() { return Device.prototype.onUninit.call(this); },
@@ -230,7 +230,7 @@ test("all Broadlink drivers inherit detection, and overridden deletion handlers 
       getData: () => ({ id: "test" }),
       homey: { clearTimeout() {} },
       log() {},
-    };
+    });
     await Device.prototype.onDeleted.call(device);
     assert.equal(stopped, 1, `${id} deletion must stop lock checks`);
   }
