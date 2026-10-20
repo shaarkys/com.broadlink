@@ -199,5 +199,8 @@
   },
   "3.1.74": {
     "en": "Fixed SP2/SP3S re-authentication, expired-session recovery, and command error reporting."
+  },
+  "3.1.75": {
+    "en": "Fixed RM4 Mini / RM5 Plus IR packet lengths, automatic recovery from expired control keys, and error reporting when sending or learning commands."
   }
 }
