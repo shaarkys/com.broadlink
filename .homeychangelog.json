@@ -205,5 +205,8 @@
   },
   "3.1.76": {
     "en": "Fixed RM Max IR/RF protocol handling and improved model-specific lock guidance. Added one automatic unlock attempt per detected locked period across all supported Broadlink driver families, using stored session credentials and preserving the device name. Unlock attempts, skips, acceptance, and failures are recorded in normal diagnostic logs. Lock warnings clear only after discovery confirms the device is unlocked; firmware may reject unlocking."
+  },
+  "3.1.77": {
+    "en": "Corrected Broadlink authentication packet formatting and RM Max device-type handling, and added clearer authentication failure logs with device error codes and reply lengths."
   }
 }
