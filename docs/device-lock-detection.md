@@ -101,6 +101,26 @@ It does not resolve every authentication issue: [another V62130 tester reports a
 No Magic Home server/client setting is assumed to be an unlock mechanism. Other
 RM4 Pro models retain their existing framing and sensor behavior.
 
+### Authentication before unlocking
+
+A discovery reply reporting `locked` is not an authenticated session. A newly
+paired RM Max can return a 56-byte authentication error with no encrypted ID/key.
+In that case automatic unlocking is skipped, and IR/RF framing changes cannot
+yet be exercised. This is different from an unlock command being rejected.
+
+Authentication now matches upstream's 80-byte payload, including all 16 client
+identifier bytes and the six-byte `Test 1` name, without adding an extra AES block.
+Pairing and RM4 Pro/RM Max manual authentication retain the raw decimal discovery
+type (`44939` becomes `0xAF8B`, not `0x4939`); manual authentication uses the
+submitted IP address. These shared protocol corrections do not bypass firmware
+authentication restrictions.
+
+Device rejection codes and response length are checked before extracting the
+session. Authentication failures are logged through normal Homey error logging,
+including with debug disabled, rather than being reduced to a missing-payload
+decryption error. Raw authentication replies and session keys are not logged.
+Malformed or empty successful replies cannot install an empty key/device ID.
+
 Existing Flow IDs, capability IDs, device identities, settings, stored commands,
 and dependency versions remain unchanged. The only migration adds the new
 `device_lock_state` capability when missing. Lock state is rechecked after app
@@ -161,6 +181,13 @@ No dependencies or manifest definitions change for this update.
    reject the Flow and do not fire sent triggers. Confirm RM4 HTS2 sensor requests
    are not issued. Repeat ordinary IR/RF and sensor checks on an RM4 Pro to check
    that its existing behavior is retained.
+8. For the RM Max authentication failure, retry pairing or the device's existing
+   Authenticate setting with the updated build. Record firmware/SDK version and
+   the normal authentication result. If authentication still fails, submit the
+   diagnostic containing its signed Broadlink error code and reply length. If
+   it succeeds, wait for the next lock check and distinguish unlock acceptance
+   from the subsequent discovery confirmation. Do not treat an authentication
+   fix as hardware-verified until this retest succeeds.
 
 Physical Homey/device behavior remains unverified until these checks are run.
 Analysis used Graft queries/skeletons/caller searches, targeted source reads,

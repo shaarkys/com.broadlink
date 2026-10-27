@@ -438,13 +438,13 @@ class RM4ProDevice extends BroadlinkDevice {
         this._utils.debugLog(this, "Re-authenticating device due to settings change");
         let deviceData = this.getData();
         let options = {
-          ipAddress: this.getSettings().ipAddress,
+          ipAddress: newSettings.ipAddress,
           mac: this._utils.hexToArr(deviceData.mac),
           count: Math.floor(Math.random() * 0xffff),
           id: null,
           key: null,
           homey: this.homey,
-          deviceType: parseInt(deviceData.devtype, 16),
+          deviceType: Number(deviceData.devtype),
         };
         this._communicate.configure(options);
         await this.authenticateDevice();
