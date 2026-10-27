@@ -202,5 +202,8 @@
   },
   "3.1.75": {
     "en": "Fixed RM4 Mini / RM5 Plus IR packet lengths, automatic recovery from expired control keys, and error reporting when sending or learning commands."
+  },
+  "3.1.76": {
+    "en": "Fixed RM Max IR/RF protocol handling and improved model-specific lock guidance. Added one automatic unlock attempt per detected locked period across all supported Broadlink driver families, using stored session credentials and preserving the device name. Unlock attempts, skips, acceptance, and failures are recorded in normal diagnostic logs. Lock warnings clear only after discovery confirms the device is unlocked; firmware may reject unlocking."
   }
 }
