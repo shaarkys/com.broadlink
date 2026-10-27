@@ -349,3 +349,171 @@ test("stopping during capability migration prevents a late reset or timer restar
   assert.equal(capabilities.has("device_lock_state"), false);
   device._communicate.destroy();
 });
+
+test("set_lock matches upstream's 80-byte layout and preserves UTF-8 names", async () => {
+  const comm = new Communicate();
+  comm.homey = { __: (key) => key };
+  const name = "Living room \u00e9";
+  for (const state of [false, true]) {
+    comm.send_packet = async (command, version, payload, options) => {
+      assert.equal(command, 0x6a);
+      assert.equal(version, false);
+      const expected = Buffer.alloc(80);
+      Buffer.from(name).copy(expected, 4);
+      expected[0x43] = Number(state);
+      assert.deepEqual(Buffer.from(payload), expected);
+      assert.deepEqual(options, { singleAttempt: true, timeout: 5, logPayload: false });
+      return { error: 0 };
+    };
+    await comm.set_lock(state, name);
+  }
+  comm.send_packet = () => assert.fail("invalid input must not send a packet");
+  for (const [state, name] of [[0, "name"], [false, undefined], [false, "a\0b"], [false, "\u00e9".repeat(32)]]) {
+    await assert.rejects(comm.set_lock(state, name), /set_lock|UTF-8/);
+  }
+});
+
+test("set_lock preserves signed device rejection codes", async () => {
+  const comm = new Communicate();
+  comm.homey = { __: (key) => key };
+  for (const [raw, code] of [[65529, -7], [65530, -6], [65535, -1]]) {
+    comm.send_packet = async () => ({ error: raw });
+    await assert.rejects(comm.set_lock(false, "FCBLE GW"), (err) => err.code === code);
+  }
+});
+
+test("unlock transport makes a single five-second attempt without logging the device name", async () => {
+  const comm = new Communicate();
+  comm.configure({ homey: { settings: { get: () => null }, __: (key) => key }, count: 0 });
+  const logs = [];
+  comm._utils.debugLog = (_source, ...args) => logs.push(args.join(" "));
+  let sends = 0;
+  comm.sendto = async (_packet, _ip, _port, timeout) => {
+    sends++;
+    assert.equal(timeout, 5);
+    throw new Error("UDP timeout");
+  };
+  await assert.rejects(comm.set_lock(false, "Private room"), /UDP timeout/);
+  assert.equal(sends, 1);
+  assert.ok(!logs.some((line) => line.includes("payload=") || line.includes("Private room")));
+});
+
+test("discovery preserves valid device names and rejects incomplete or malformed UTF-8 names", async () => {
+  const comm = new Communicate();
+  comm.configure({ homey: {} });
+  for (const bytes of [Buffer.from("FCBLE GW"), Buffer.from("\u00e9".repeat(31)), Buffer.from([0xff])]) {
+    const reply = Buffer.alloc(128);
+    bytes.copy(reply, 0x40);
+    comm.sendto = async () => ({ address: "192.0.2.10", data: reply });
+    const info = await comm.discover(5, "0.0.0.0", "192.0.2.10", 0);
+    assert.equal(info.name, bytes[0] === 0xff ? null : bytes.toString("utf8"));
+  }
+  comm.sendto = async () => ({ data: Buffer.alloc(64) });
+  assert.equal((await comm.discover(5, "0.0.0.0", "192.0.2.10", 0)).name, null);
+});
+
+test("automatic unlock is isolated, bounded per locked period, and awaits discovery confirmation", async (t) => {
+  const { device, capabilities, runNext, settings } = harness();
+  const normal = { key: "untouched" };
+  device._communicate = normal;
+  const before = { ...settings };
+  const states = [true, true, null, false, true];
+  let attempts = 0;
+  t.mock.method(Communicate.prototype, "discover", async () => discovery(states.shift(), { name: "FCBLE GW" }));
+  t.mock.method(Communicate.prototype, "set_lock", async function (state, name) {
+    attempts++;
+    assert.notEqual(this, normal);
+    assert.equal(state, false);
+    assert.equal(name, "FCBLE GW");
+    assert.equal(Buffer.from(this.key).toString("hex"), settings.key);
+    assert.equal(Buffer.from(this.id).toString("hex"), settings.id);
+    assert.equal(this.deviceType, 0x520b);
+  });
+  device.startLockChecks();
+  await runNext();
+  assert.equal(attempts, 1);
+  assert.equal(capabilities.get("device_lock_state"), "locked");
+  assert.match(device.warnings.at(-1), /Device locked/);
+  await runNext();
+  await runNext();
+  assert.equal(attempts, 1);
+  await runNext();
+  assert.equal(capabilities.get("device_lock_state"), "unlocked");
+  assert.equal(device.warnings.at(-1), null);
+  await runNext();
+  assert.equal(attempts, 2);
+  assert.equal(device._communicate, normal);
+  assert.deepEqual(settings, before);
+  device.stopLockChecks();
+});
+
+test("failed unlock remains locked, preserves the error, and does not retry every minute", async (t) => {
+  const { device, runNext, capabilities } = harness();
+  const failure = Object.assign(new Error("control key expired"), { code: -7 });
+  let attempts = 0;
+  t.mock.method(Communicate.prototype, "discover", async () => discovery(true, { name: "FCBLE GW" }));
+  t.mock.method(Communicate.prototype, "set_lock", async () => { attempts++; throw failure; });
+  device.startLockChecks();
+  await runNext();
+  await runNext();
+  assert.equal(attempts, 1);
+  assert.equal(capabilities.get("device_lock_state"), "locked");
+  assert.equal(device.errors[0][1], failure);
+  assert.match(device.warnings.at(-1), /Device locked/);
+  device.stopLockChecks();
+});
+
+test("unlock waits for valid stored credentials and never substitutes the Homey device label", async (t) => {
+  const { device, runNext, settings } = harness();
+  const sessionKey = settings.key;
+  settings.key = "";
+  let name;
+  let attempts = 0;
+  t.mock.method(Communicate.prototype, "discover", async () => discovery(true, { name }));
+  t.mock.method(Communicate.prototype, "auth", () => assert.fail("must not change the command session"));
+  t.mock.method(Communicate.prototype, "set_lock", async () => { attempts++; });
+  device.startLockChecks();
+  await runNext();
+  name = "FCBLE GW";
+  await runNext();
+  assert.equal(attempts, 0);
+  settings.key = sessionKey;
+  await runNext();
+  assert.equal(attempts, 1);
+  device.stopLockChecks();
+});
+
+test("stopping during unlock cancels its socket, prevents retries, and ignores late completion", async (t) => {
+  for (const stop of ["onUninit", "startLockChecks"]) {
+    const { device, timers, runNext } = harness();
+    let pendingUnlock;
+    t.mock.method(Communicate.prototype, "discover", async () => discovery(true, { name: "FCBLE GW" }));
+    t.mock.method(Communicate.prototype, "set_lock", function () {
+      this.dgramSocket = { close() {} };
+      return new Promise((_resolve, reject) => { pendingUnlock = true; this.callback = { reject }; });
+    });
+    device.startLockChecks();
+    const checking = runNext();
+    while (!pendingUnlock) await Promise.resolve();
+    device[stop]();
+    await checking;
+    assert.equal(device._lockProbe, null);
+    assert.equal(device.errors.length, 0);
+    assert.ok(!device.logs.some((line) => line.includes("command accepted")));
+    assert.equal(timers.size, stop === "startLockChecks" ? 1 : 0);
+    device.stopLockChecks();
+  }
+});
+
+test("RM Max warning does not prescribe a missing unlock switch", async () => {
+  const { device } = harness();
+  const en = require("../locales/en.json");
+  device.getData = () => ({ devtype: String(0xaf8b) });
+  device.homey.__ = (key) => key.split(".").reduce((value, part) => value[part], en);
+  device.startLockChecks();
+  device._broadlinkLocked = true;
+  await device.renderDeviceWarning();
+  assert.match(device.warnings.at(-1), /RM Max.*may have no Lock device switch/);
+  assert.match(device.warnings.at(-1), /does not confirm whether local control works/);
+  device.stopLockChecks();
+});

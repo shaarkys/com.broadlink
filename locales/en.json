@@ -1,6 +1,7 @@
 {
   "errors": {
-    "device_locked": "This device reports that it is locked. In the Broadlink app, open the device settings and turn off Lock device to allow Homey access. The warning clears after an unlocked reply (checks run about once a minute).",
+    "device_locked": "Discovery reports that this device is locked. Homey attempts an automatic unlock using the stored session. If the warning persists and your Broadlink app offers Lock device, turn it off. The warning clears only after discovery reports unlocked (checks about once a minute).",
+    "device_locked_rmmax": "RM Max reports a discovery lock flag. Homey attempts an automatic unlock using the stored session, but firmware may reject it. RM Max may have no Lock device switch in the Broadlink app. This flag alone does not confirm whether local control works. See the device logs for the unlock result; the warning clears after discovery reports unlocked.",
     "sending timeout": "Timeout while sending message to device: device did not respond in time",
     "decrypt_payload": "Cannot decrypt response: no payload.",
     "decrypt_keylength": "Cannot decrypt response: invalid key length.",
@@ -15,7 +16,7 @@
   },
   "pair": {
     "title": "Pair Broadlink Device",
-    "intro": "Configure the device with the Broadlink / e-Control app on a smartphone, ensure it's NOT locked.<br>Get the IP address from your wifi router.",
+    "intro": "Configure the device with the appropriate Broadlink app on a smartphone. If the app offers Lock device, turn it off; RM Max may have no such switch.<br>Get the IP address from your wifi router.",
 	"cancel": "Cancel",
 	"add": "Add",
 	"address": "IP address",

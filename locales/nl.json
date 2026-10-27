@@ -1,6 +1,7 @@
 {
   "errors": {
-    "device_locked": "Dit apparaat meldt dat het vergrendeld is. Open de apparaatinstellingen in de Broadlink-app en schakel Apparaat vergrendelen uit om Homey toegang te geven. De waarschuwing verdwijnt na een ontgrendeld antwoord (controle ongeveer elke minuut).",
+    "device_locked": "Apparaatdetectie meldt dat dit apparaat vergrendeld is. Homey probeert het automatisch te ontgrendelen met de opgeslagen sessie. Blijft de waarschuwing staan en biedt de Broadlink-app Apparaat vergrendelen aan, schakel dit dan uit. De waarschuwing verdwijnt pas na een ontgrendeld detectieantwoord (controle ongeveer elke minuut).",
+    "device_locked_rmmax": "RM Max meldt een vergrendelingsvlag tijdens apparaatdetectie. Homey probeert automatisch te ontgrendelen met de opgeslagen sessie, maar de firmware kan dit weigeren. RM Max heeft mogelijk geen vergrendelingsschakelaar in de Broadlink-app. Deze vlag alleen bevestigt niet of lokale bediening werkt. Bekijk de apparaatlogs voor het resultaat; de waarschuwing verdwijnt na een ontgrendeld detectieantwoord.",
     "sending timeout": "Kan geen bericht naar apparaat sturen: antwoord niet op tijd ontvangen",
     "decrypt_payload": "Kan anwoord niet ontsleutelen: geen data in bericht.",
     "decrypt_keylength": "Kan anwoord niet ontsleutelen: foutive sleutel lengte.",
@@ -15,7 +16,7 @@
   },
   "pair": {
     "title": "Broadlink Apparaat Toevoegen",
-    "intro": "Configureer het apparaat met de Broadlink / e-Control app op een smartphone, zorg ervoor dat het NIET vergrendeld is.<br>Verkrijg het IP-adres van uw wifi-router.",
+    "intro": "Configureer het apparaat met de juiste Broadlink-app op een smartphone. Schakel Apparaat vergrendelen uit als de app deze optie biedt; RM Max heeft mogelijk geen dergelijke schakelaar.<br>Verkrijg het IP-adres van uw wifi-router.",
 	"cancel": "Stop",
 	"add": "Toevoegen",
 	"address": "IP address",

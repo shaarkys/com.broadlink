@@ -114,6 +114,7 @@ class RM4ProDevice extends BroadlinkDevice {
       drv.rm4_pro_any_cmd_trigger.trigger(this, { CommandSent: cmd.name }, {});
     } catch (e) {
       this._utils.debugLog(this, `Error during command execution: ${e}`);
+      if (Number(this.getData().devtype) === 0xaf8b) throw e;
     }
 
     return Promise.resolve(true);
@@ -221,7 +222,9 @@ class RM4ProDevice extends BroadlinkDevice {
 
     // Register polling for temperature and humidity
 
-    this.pollInterval = setInterval(this.pollTempHumidity.bind(this), 60000); // Poll every 60 seconds
+    if (Number(this.getData().devtype) !== 0xaf8b) {
+      this.pollInterval = setInterval(this.pollTempHumidity.bind(this), 60000); // Poll every 60 seconds
+    }
 
     if (!this.getSetting("key")) {
       this._utils.debugLog(this, `>> Key not known, launching autentification during OnInit <<`);
@@ -581,6 +584,8 @@ class RM4ProDevice extends BroadlinkDevice {
   }
 
   async pollTempHumidity() {
+    // RM Max is paired through this driver but does not use RM4's HTS2 sensor protocol.
+    if (this.getData && Number(this.getData().devtype) === 0xaf8b) return;
     try {
       const { temperature, humidity } = await this._communicate.checkTempHumidity_rm4pro();
       const tempValue = temperature[0] + temperature[1] / 100;

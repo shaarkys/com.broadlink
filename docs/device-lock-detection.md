@@ -3,9 +3,15 @@
 Paired devices now check their lock state at initialization and approximately
 once a minute. If the device explicitly reports that it is locked, Homey shows:
 
-> This device reports that it is locked. In the Broadlink app, open the device
-> settings and turn off Lock device to allow Homey access. The warning clears
-> after an unlocked reply (checks run about once a minute).
+> Discovery reports that this device is locked. Homey attempts an automatic
+> unlock using the stored session. If the warning persists and your Broadlink
+> app offers Lock device, turn it off. The warning clears only after discovery
+> reports unlocked (checks about once a minute).
+
+RM Max (`0xAF8B`) has separate guidance: its app may not offer a lock switch,
+the firmware may reject `set_lock`, and the discovery flag alone does not prove
+whether local commands work. Pairing instructions also make the lock switch
+conditional on its availability.
 
 The implementation is shared by all 13 driver families in this app: A1, Dooya,
 Hysen, MP1, RM3 mini, RM4 mini, RM4 Pro, RM plus, RM Pro, SCB1E, SP1, SP2, and
@@ -33,7 +39,9 @@ device type must match the paired device before applying a lock state.
 
 Each check sends unicast discovery to the device's configured IP on a separate
 communication instance/socket, with a five-second timeout. It never uses the
-IR/RF/control socket, authenticates, changes a key, or changes the device lock.
+IR/RF/control socket, authenticates, or changes a key. A confirmed locked reply
+can now initiate the bounded unlock attempt described below on that isolated
+connection.
 The next check is scheduled only after the previous check completes. Repeated
 initialization replaces the check loop; deletion and uninitialization cancel
 pending checks and close their socket. Late replies are ignored.
@@ -45,9 +53,53 @@ warnings. IR/RF learning messages can coexist with a lock warning, and their
 cleanup does not remove it. Warning updates are serialized through Homey's
 [Device.setWarning API](https://apps-sdk-v3.developer.homey.app/Device.html#setWarning).
 
-This is advisory: the app does not block pairing, device controls, or Flows and
-does not automatically unlock devices. The lock flag is separate from the
+The warning does not block pairing, device controls, or Flows. The lock flag is separate from the
 RM4 zero-temperature/humidity diagnosis; zero readings are not lock evidence.
+
+## Automatic unlock attempt
+
+After matching the discovery IP, MAC and device type, Homey attempts
+`set_lock(false)` once per continuously locked period. An explicitly unlocked
+reply or restarting the monitor permits another attempt; unknown replies and
+timeouts do not reset the attempt limit. There is no automatic retry after
+device rejection or timeout, and no attempt on an identity mismatch.
+
+The operation follows upstream's 80-byte `0x6A` payload: four zero command bytes,
+the existing UTF-8 device name, and a boolean lock byte at offset `0x43`. Since
+this packet also sets the name, only the name from a complete, valid discovery
+reply is used. The Homey label is never substituted. An invalid or unavailable
+name skips the attempt. The name payload is excluded from debug logging.
+
+The attempt copies the stored 16-byte key and four-byte ID into the isolated
+connection. Missing/invalid credentials skip it until authentication has been
+completed through the existing app path. It does not bootstrap authentication,
+replace the active command session, or bypass rejected authentication. This
+avoids changing a session while another driver command is running.
+
+Each attempt sends once with a five-second timeout. Normal logs distinguish
+started, skipped, accepted-awaiting-confirmation, and failed (with the underlying
+safe error). An accepted command **does not** clear the warning or publish
+Unlocked: only a subsequent matching discovery reply does that. Uninitialization,
+deletion, monitor replacement, and IP changes suppress stale completion updates;
+stopping the monitor closes its socket and prevents retry traffic.
+
+## RM Max protocol compatibility
+
+RM Max remains paired through `RM4_pro`, preserving device data, settings,
+capabilities and Flow IDs. Only raw device type `0xAF8B` selects legacy `<I`
+framing for IR learning, code reading/sending, RF sweeping, frequency detection,
+RF capture (including manual frequency), and sweep cancellation. Responses use
+legacy offsets. Captures retain the existing two-byte Homey status prefix;
+transmission accepts both that stored format and raw IR/RF packets and removes
+padding beyond the declared command length. Failed RM Max transmissions reject
+the action and do not fire sent triggers. RM4 sensor polling is skipped for
+RM Max because it does not use the RM4 HTS2 sensor protocol.
+
+This follows the [RM Max framing report](https://github.com/mjg59/python-broadlink/issues/829#issuecomment-4985869826)
+and the actual [PR 838 diff](https://github.com/mjg59/python-broadlink/pull/838/files).
+It does not resolve every authentication issue: [another V62130 tester reports authentication failure before commands](https://github.com/mjg59/python-broadlink/pull/838#issuecomment-5083900342).
+No Magic Home server/client setting is assumed to be an unlock mechanism. Other
+RM4 Pro models retain their existing framing and sensor behavior.
 
 Existing Flow IDs, capability IDs, device identities, settings, stored commands,
 and dependency versions remain unchanged. The only migration adds the new
@@ -72,20 +124,23 @@ restart; no stored device data or commands are migrated.
   communication, capability migration and values, normal logging, timer
   replacement, and cleanup across all drivers.
 
-Local validation: syntax checks, `npm test` (67 tests), Homey publish-level
-validation, generated-source/manifest checks, and `git diff --check`. No lint or
-separate build script is configured. Sol Advisor route: `solo`. No device network
-tests, Homey installation, Git commit, push, or publishing were performed.
+Regression coverage now also includes upstream-compatible lock payloads, UTF-8
+name preservation, missing-session skips, one-shot timeout/rejection behavior,
+discovery confirmation, cancellation during unlock, and RM Max IR/RF packet
+fixtures and failed-send behavior. No lint or separate build script is configured.
+No dependencies or manifest definitions change for this update.
 
 ## Manual runtime test
 
-1. Confirm **Device lock** appears on an existing paired device after updating
-   and on a newly paired device. Disable debug logging. On a device with a lock
-   option, enable **Lock device** in the Broadlink app. Within about a minute,
-   confirm the capability shows Locked, the warning describes the lock, and
-   normal logs report `Broadlink device lock state: locked`.
-2. Disable the lock. Confirm the capability shows Unlocked, the warning clears,
-   and logs report `unlocked` on the next successful check.
+1. On an authenticated device with a lock option, enable **Lock device** in the
+   Broadlink app. Within about a minute confirm the Locked capability, warning,
+   and a single automatic unlock attempt in normal logs. Confirm the device's
+   Broadlink name remains unchanged. If accepted, wait for the next discovery
+   check to confirm Unlocked and clear the warning; acceptance alone must not do so.
+2. If rejected, confirm the original error is logged, the warning remains, and
+   later locked checks do not repeat the command. Disable the lock manually if
+   the app offers it. If no stored session exists, confirm a skip is logged;
+   authenticate through the existing device settings and wait for the next check.
 3. Repeat with an already paired RM4 Pro and one other supported device family
    whose firmware exposes the flag. Check normal commands and sensor polling.
 4. While locked, try an IR/RF learning action. Confirm its progress/error message
@@ -99,6 +154,13 @@ tests, Homey installation, Git commit, push, or publishing were performed.
    the extended discovery flag, confirm the capability remains Unknown and no
    false lock warning appears. Confirm repeated initialization does not add the
    capability twice or create duplicate check loops.
+7. On RM Max, confirm the model-specific warning does not require a nonexistent
+   app toggle. Record firmware version and test existing stored IR/RF commands,
+   learning a new IR code and sending it, automatic RF learning, and manual RF
+   learning at a frequency supported by the hardware. Confirm failed commands
+   reject the Flow and do not fire sent triggers. Confirm RM4 HTS2 sensor requests
+   are not issued. Repeat ordinary IR/RF and sensor checks on an RM4 Pro to check
+   that its existing behavior is retained.
 
 Physical Homey/device behavior remains unverified until these checks are run.
 Analysis used Graft queries/skeletons/caller searches, targeted source reads,
