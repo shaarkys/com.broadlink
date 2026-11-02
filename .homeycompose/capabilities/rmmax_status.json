@@ -1,0 +1,9 @@
+{
+  "type": "string",
+  "title": { "en": "Status", "nl": "Status" },
+  "getable": true,
+  "setable": false,
+  "insights": false,
+  "uiComponent": "sensor",
+  "icon": "/drivers/RM_max/assets/icon.svg"
+}

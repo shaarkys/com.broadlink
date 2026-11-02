@@ -575,6 +575,34 @@
         ]
       },
       {
+        "id": "RC_sent_any_rm_max",
+        "title": {
+          "en": "A remote command was sent",
+          "nl": "Een afstandsbedieningscommando is verzonden"
+        },
+        "tokens": [
+          {
+            "name": "CommandSent",
+            "type": "string",
+            "title": {
+              "en": "Command sent",
+              "nl": "Verzonden commando"
+            },
+            "example": {
+              "en": "Power",
+              "nl": "Aan/uit"
+            }
+          }
+        ],
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM_max"
+          }
+        ]
+      },
+      {
         "id": "RC_sent_any_rmplus",
         "title": {
           "en": "Any Remote Command transmitted",
@@ -1533,6 +1561,46 @@
               "en": "name",
               "nl": "naam"
             }
+          }
+        ]
+      },
+      {
+        "id": "send_command_rm_max",
+        "title": {
+          "en": "Send a saved command",
+          "nl": "Verstuur een opgeslagen commando"
+        },
+        "titleFormatted": {
+          "en": "Send command [[variable]]",
+          "nl": "Verstuur commando [[variable]]"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM_max"
+          },
+          {
+            "name": "variable",
+            "type": "autocomplete",
+            "placeholder": {
+              "en": "Command",
+              "nl": "Commando"
+            }
+          }
+        ]
+      },
+      {
+        "id": "refresh_commands_rm_max",
+        "title": {
+          "en": "Refresh saved commands",
+          "nl": "Vernieuw opgeslagen commando's"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM_max"
           }
         ]
       },
@@ -4298,8 +4366,8 @@
       ],
       "id": "RM4_pro",
       "name": {
-        "en": "RM4 Pro / RM Max",
-        "nl": "RM4 Pro / RM Max"
+        "en": "RM4 Pro",
+        "nl": "RM4 Pro"
       },
       "images": {
         "large": "./drivers/RM4_pro/assets/images/large.jpg",
@@ -4331,6 +4399,90 @@
         {
           "id": "add_devices",
           "template": "add_devices"
+        }
+      ]
+    },
+    {
+      "id": "RM_max",
+      "name": {
+        "en": "RM Max",
+        "nl": "RM Max"
+      },
+      "images": {
+        "small": "/drivers/RM_max/assets/images/small.png",
+        "large": "/drivers/RM_max/assets/images/large.png"
+      },
+      "class": "other",
+      "platforms": [
+        "local"
+      ],
+      "connectivity": [
+        "cloud",
+        "lan"
+      ],
+      "capabilities": [
+        "rmmax_status",
+        "button.refresh",
+        "button.local_test"
+      ],
+      "capabilitiesOptions": {
+        "button.refresh": {
+          "title": {
+            "en": "Refresh saved commands",
+            "nl": "Opgeslagen commando's vernieuwen"
+          }
+        },
+        "button.local_test": {
+          "title": {
+            "en": "Test local credentials",
+            "nl": "Lokale gegevens testen"
+          }
+        }
+      },
+      "settings": [
+        {
+          "id": "ipAddress",
+          "type": "text",
+          "value": "",
+          "label": {
+            "en": "Local IP address",
+            "nl": "Lokaal IP-adres"
+          }
+        },
+        {
+          "id": "transport",
+          "type": "dropdown",
+          "value": "cloud",
+          "label": {
+            "en": "Connection",
+            "nl": "Verbinding"
+          },
+          "values": [
+            {
+              "id": "cloud",
+              "label": {
+                "en": "Cloud",
+                "nl": "Cloud"
+              }
+            },
+            {
+              "id": "local",
+              "label": {
+                "en": "Local after successful test",
+                "nl": "Lokaal na geslaagde test"
+              }
+            }
+          ]
+        }
+      ],
+      "pair": [
+        {
+          "id": "cloud"
+        }
+      ],
+      "repair": [
+        {
+          "id": "cloud"
         }
       ]
     },
@@ -6249,6 +6401,18 @@
       "setable": true,
       "uiComponent": "toggle",
       "insights": false
+    },
+    "rmmax_status": {
+      "type": "string",
+      "title": {
+        "en": "Status",
+        "nl": "Status"
+      },
+      "getable": true,
+      "setable": false,
+      "insights": false,
+      "uiComponent": "sensor",
+      "icon": "/drivers/RM_max/assets/icon.svg"
     },
     "updateSensor": {
       "type": "boolean",

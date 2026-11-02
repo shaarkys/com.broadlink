@@ -1,0 +1,104 @@
+<style>
+  .rm-field { margin: 12px 0; }
+  .rm-field label { display: block; margin-bottom: 4px; font-weight: 600; }
+  .rm-field input, .rm-field select { box-sizing: border-box; width: 100%; padding: 8px; }
+  .rm-actions button { margin: 4px 6px 4px 0; }
+  .rm-note { font-size: .9em; }
+  #commands { max-height: 220px; overflow-y: auto; }
+</style>
+<div id="rmmax">
+  <p id="intro"></p>
+  <div class="rm-field"><label for="provider" id="providerLabel"></label><select id="provider"><option value="broadlink_eu">BroadLink EU</option><option value="magic_home">Magic Home</option></select></div>
+  <p id="providerHelp" class="rm-note"></p>
+  <div id="euFields">
+    <div class="rm-field"><label for="email" id="emailLabel"></label><input id="email" type="email" autocomplete="username"></div>
+    <div class="rm-field"><label for="password" id="passwordLabel"></label><input id="password" type="password" autocomplete="current-password"></div>
+  </div>
+  <div id="magicFields" hidden>
+    <div class="rm-field"><label for="authCode" id="authLabel"></label><input id="authCode" type="password" autocomplete="off"></div>
+    <div class="rm-field"><label for="region" id="regionLabel"></label><select id="region"><option value="eu">Europe</option><option value="us">United States</option><option value="cn">China</option></select></div>
+  </div>
+  <div class="rm-actions"><button id="login" type="button"></button></div>
+  <div id="homeSection" hidden><div class="rm-field"><label for="home" id="homeLabel"></label><select id="home"></select></div></div>
+  <div class="rm-actions"><button id="discover" type="button" hidden></button></div>
+  <p id="summary" aria-live="polite"></p>
+  <div id="hubSection" hidden><div class="rm-field"><label for="hub" id="hubLabel"></label><select id="hub"></select></div><button id="preview" type="button"></button></div>
+  <div id="previewSection" hidden><p id="learning"></p><p id="skipped"></p><ul id="commands"></ul>
+    <div id="localSection" hidden><p id="localHelp"></p><div class="rm-field"><label for="ip" id="ipLabel"></label><input id="ip" type="text" inputmode="decimal" autocomplete="off" placeholder="192.168.1.10"></div><button id="probe" type="button"></button><p id="probeResult" aria-live="polite"></p></div>
+    <button id="complete" type="button"></button>
+  </div>
+  <p id="error" role="alert"></p>
+</div>
+<script>
+(function () {
+  'use strict';
+  var nl = (navigator.language || '').toLowerCase().indexOf('nl') === 0;
+  var texts = nl ? {
+    intro: 'De cloudverbinding vereist internet. Leer commando’s eerst in de BroadLink-app en vernieuw daarna de opgeslagen commando’s in Homey.', provider: 'Dienst', eu: 'Gebruik een account van de internationale BroadLink-app in de EU.', magic: 'Gebruik een officiële Magic Home-autorisatiecode uit Mijn / diensten van derden. Deze dienst biedt geen import van opgeslagen IR/RF-commando’s via de officiële API.', email: 'E-mailadres', password: 'Wachtwoord', auth: 'Autorisatiecode', region: 'Regio', login: 'Aanmelden', home: 'Woning', discover: 'Apparaten zoeken', hub: 'RM Max', preview: 'Commando’s bekijken', learning: 'Opgeslagen commando’s:', skipped: 'Overgeslagen:', local: 'Optioneel: test de lokale gegevens met een alleen-lezen firmwareverzoek. Er wordt geen commando verzonden.', ip: 'Lokaal IP-adres', probe: 'Lokale gegevens testen', tested: 'Lokale test geslaagd. Firmware:', add: 'Toevoegen', repair: 'Herstellen', failed: 'De actie is mislukt. Controleer de gegevens en probeer het opnieuw.', noHubs: 'Geen geschikte RM Max gevonden.', limitation: 'Magic Home ondersteunt momenteel geen import van opgeslagen IR/RF-commando’s.', summary: 'Apparaten / RM Max / lokale gegevens:', unavailable: 'Dit apparaat kan momenteel niet worden toegevoegd of hersteld.', reason: 'Details:'
+  } : {
+    intro: 'Cloud access requires internet. Learn commands in the BroadLink app first, then refresh saved commands in Homey.', provider: 'Service', eu: 'Use an international BroadLink app account in the EU.', magic: 'Use an official Magic Home authorization code from My / third-party services. Its official API does not provide saved IR/RF command import.', email: 'Email address', password: 'Password', auth: 'Authorization code', region: 'Region', login: 'Sign in', home: 'Home', discover: 'Find devices', hub: 'RM Max', preview: 'Preview commands', learning: 'Saved commands:', skipped: 'Skipped:', local: 'Optional: test local credentials with a read-only firmware request. No remote command is sent.', ip: 'Local IP address', probe: 'Test local credentials', tested: 'Local test succeeded. Firmware:', add: 'Add device', repair: 'Repair device', failed: 'The action failed. Check the details and try again.', noHubs: 'No eligible RM Max found.', limitation: 'Magic Home does not currently support importing saved IR/RF commands.', summary: 'Devices / RM Max / local credentials:', unavailable: 'This device cannot currently be added or repaired.', reason: 'Details:'
+  };
+  var $ = function (id) { return document.getElementById(id); };
+  var text = function (id, value) { $(id).textContent = value; };
+  var state = { repair: false, busy: false, loggedIn: false, hubs: [], canAdd: false, hasCredentials: false };
+  function render() {
+    var magic = $('provider').value === 'magic_home';
+    $('euFields').hidden = magic; $('magicFields').hidden = !magic;
+    text('providerHelp', magic ? texts.magic : texts.eu);
+    Array.prototype.forEach.call(document.querySelectorAll('#rmmax input, #rmmax select'), function (input) { input.disabled = state.busy; });
+    $('provider').disabled = state.busy || state.loggedIn;
+    Array.prototype.forEach.call(document.querySelectorAll('#rmmax button'), function (button) { button.disabled = state.busy; });
+    $('complete').disabled = state.busy || !state.canAdd;
+    $('probe').disabled = state.busy || !state.hasCredentials;
+    $('login').hidden = state.loggedIn; $('discover').hidden = !state.loggedIn;
+  }
+  function option(select, value, label) { var item = document.createElement('option'); item.value = value; item.textContent = label; select.appendChild(item); }
+  async function run(task) {
+    if (state.busy) return;
+    state.busy = true; text('error', ''); render();
+    try { await task(); } catch (error) { text('error', error && typeof error.message === 'string' ? error.message.slice(0, 400) : texts.failed); }
+    finally { state.busy = false; render(); }
+  }
+  function clearPreview() { state.canAdd = false; state.hasCredentials = false; $('previewSection').hidden = true; text('probeResult', ''); }
+  ['intro', 'provider', 'email', 'password', 'auth', 'region', 'login', 'home', 'discover', 'hub', 'preview', 'ip', 'probe'].forEach(function (key) {
+    var ids = { provider: 'providerLabel', email: 'emailLabel', password: 'passwordLabel', auth: 'authLabel', region: 'regionLabel', home: 'homeLabel', hub: 'hubLabel', ip: 'ipLabel' };
+    text(ids[key] || key, texts[key]);
+  });
+  text('learning', texts.learning); text('localHelp', texts.local);
+  $('provider').addEventListener('change', render);
+  $('login').addEventListener('click', function () { run(async function () {
+    var provider = $('provider').value;
+    var data = provider === 'broadlink_eu' ? { provider: provider, email: $('email').value, password: $('password').value } : { provider: provider, authCode: $('authCode').value, region: $('region').value };
+    var pending = Homey.emit('cloud_login', data);
+    $('email').value = ''; $('password').value = ''; $('authCode').value = '';
+    var result = await pending; state.loggedIn = true;
+    $('home').replaceChildren();
+    (result.homes || []).forEach(function (home) { option($('home'), home.id, home.name); });
+    $('homeSection').hidden = !(result.homes && result.homes.length);
+  }); });
+  $('discover').addEventListener('click', function () { run(async function () {
+    clearPreview(); $('hubSection').hidden = true;
+    var result = await Homey.emit('cloud_discover', $('homeSection').hidden ? {} : { homeId: $('home').value });
+    var s = result.summary || {}; text('summary', texts.summary + ' ' + (s.devices || 0) + ' / ' + (s.hubs || 0) + ' / ' + (s.credentialSets || 0) + '. ' + (!result.commandImportSupported ? texts.limitation : (!result.hubs.length ? texts.noHubs : '')));
+    state.hubs = result.hubs || []; $('hub').replaceChildren();
+    state.hubs.forEach(function (hub) { option($('hub'), hub.id, hub.name); });
+    $('hubSection').hidden = state.hubs.length === 0;
+  }); });
+  $('hub').addEventListener('change', function () { clearPreview(); render(); });
+  $('preview').addEventListener('click', function () { run(async function () {
+    clearPreview(); var result = await Homey.emit('cloud_preview', { hubId: $('hub').value });
+    $('commands').replaceChildren(); (result.commands || []).forEach(function (command) { var li = document.createElement('li'); li.textContent = command.name; $('commands').appendChild(li); });
+    text('skipped', texts.skipped + ' ' + (result.skipped || 0));
+    state.hasCredentials = !!result.rawCredentialsAvailable; state.canAdd = !!result.canAdd;
+    $('localSection').hidden = !state.hasCredentials; $('previewSection').hidden = false;
+    if (!state.canAdd) text('error', result.reason || texts.unavailable);
+  }); });
+  $('probe').addEventListener('click', function () { run(async function () { var result = await Homey.emit('cloud_probe', { hubId: $('hub').value, ipAddress: $('ip').value.trim() }); text('probeResult', texts.tested + ' ' + result.firmware); }); });
+  $('complete').addEventListener('click', function () { run(async function () {
+    var result = await Homey.emit('cloud_complete', { hubId: $('hub').value });
+    if (!result.repair) await Homey.createDevice(result.device);
+    Homey.done();
+  }); });
+  run(async function () { var context = await Homey.emit('cloud_context'); state.repair = !!context.repair; text('complete', state.repair ? texts.repair : texts.add); });
+}());
+</script>

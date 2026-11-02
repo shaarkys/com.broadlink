@@ -85,8 +85,10 @@ stopping the monitor closes its socket and prevents retry traffic.
 
 ## RM Max protocol compatibility
 
-RM Max remains paired through `RM4_pro`, preserving device data, settings,
-capabilities and Flow IDs. Only raw device type `0xAF8B` selects legacy `<I`
+Previously paired RM Max devices remain in `RM4_pro`, preserving device data,
+settings, capabilities and Flow IDs. New additions use the separate
+[`RM_max` driver](RM-Max-cloud.md); the RM4 Pro discovery excludes `0xAF8B`.
+In the legacy driver, only raw device type `0xAF8B` selects legacy `<I`
 framing for IR learning, code reading/sending, RF sweeping, frequency detection,
 RF capture (including manual frequency), and sweep cancellation. Responses use
 legacy offsets. Captures retain the existing two-byte Homey status prefix;
