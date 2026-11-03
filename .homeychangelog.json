@@ -214,5 +214,8 @@
   },
   "3.1.79": {
     "en": "Improved RM Max Magic Home diagnostics to identify discovered device capabilities and custom-remote actions, while clarifying pairing limitations and keeping account credentials out of logs."
+  },
+  "3.1.80": {
+    "en": "Improved RM Max Magic Home diagnostics to identify discovered device capabilities and custom-remote actions, while clarifying pairing limitations and keeping account credentials out of logs."
   }
 }
