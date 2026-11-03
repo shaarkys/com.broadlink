@@ -66,6 +66,28 @@ include their stable remote identifier so targets can be distinguished. Maximum
 import: 50 remotes, 500 commands
 and 2 MiB of normalized command data; at most three remote reads are in flight.
 
+### Recovery from v3.1.81 TV initialization failures
+
+The test version used generic `button.volume_*`, `button.channel_*` and playback
+placeholders and queried their dynamic metadata. Homey could reject that lookup
+with `Invalid Capability: button.volume_up`, preventing initialization and Repair.
+The initialization handler also incorrectly described this as missing authorization.
+
+On update, stored command metadata is rebuilt from the saved endpoint without
+changing command IDs, payloads or device identity. Native `volume_up/down`,
+`channel_up/down` and `speaker_*` controls replace the corresponding placeholders;
+Play/Pause use declared stateless app capabilities with their own icons. The seven
+old control placeholders are removed only after supported replacements are added.
+Generic command Flow selections remain valid. Any direct HomeyScript references to
+those test-only placeholder capability IDs must use the replacement IDs instead.
+Controls that later disappear from cloud discovery are still retained as described
+above. Native control metadata is provided by Homey rather than queried dynamically.
+
+Keep the existing TV device when updating. Initialization should perform the
+migration automatically. If authorization is subsequently rejected, use **Repair**
+with a fresh Magic Home code and select the same TV entry. A control setup failure
+is reported separately from a cloud authorization failure.
+
 ## Authorization and diagnostics
 
 Passwords and authorization codes are used during pairing only. Sessions, hub
@@ -166,4 +188,4 @@ installation are part of this implementation.
 
 ## Changelog (unreleased)
 
-Enabled adding Magic Home RM Max remotes and sensors with advertised cloud controls, automatic five-minute command/sensor refresh, connection monitoring and Repair guidance; retained verified-key local control for BroadLink EU.
+Fixed RM Max TV initialization and Repair by migrating control placeholders to supported Homey capabilities, preserving saved command Flow selections and reporting control setup errors separately from authorization failures.

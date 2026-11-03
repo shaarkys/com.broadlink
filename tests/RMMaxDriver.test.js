@@ -3,6 +3,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Module = require('node:module');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const systemCapabilities = new Set(require('./fixtures/homey-rmmax-capabilities.json').systemCapabilities);
+const driverManifest = require('../drivers/RM_max/driver.compose.json');
+const knownCapability = id => systemCapabilities.has(id.split('.')[0]) || fs.existsSync(path.join(__dirname, '../.homeycompose/capabilities', id + '.json'));
 
 let scenario;
 const hub = { endpointId: 'hub1', productId: 'rmmax', friendlyName: 'Living room', mac: 'aabbccddeeff', cookie: 'private-cookie', valid: true };
@@ -38,8 +43,12 @@ try {
     if (request === 'homey') return { Driver: class {}, Device: class {
       constructor() { this.testCaps = new Set(['rmmax_status', 'button.refresh', 'button.local_test']); this.testOptions = {}; }
       hasCapability(id) { return this.testCaps.has(id); }
-      async addCapability(id) { this.testCaps.add(id); }
-      getCapabilityOptions(id) { return this.testOptions[id] || {}; }
+      async addCapability(id) { if (!knownCapability(id)) throw Error('Invalid Capability: ' + id); this.testCaps.add(id); }
+      async removeCapability(id) { this.testCaps.delete(id); }
+      getCapabilityOptions(id) {
+        if (id.startsWith('button.') && !driverManifest.capabilitiesOptions[id]) throw Error('Invalid Capability: ' + id);
+        return this.testOptions[id] || {};
+      }
       async setCapabilityOptions(id, value) { this.testOptions[id] = value; }
     } };
     if (request.endsWith('/BroadlinkCloud') || request === './BroadlinkCloud') return cloud;
@@ -96,9 +105,49 @@ test('Magic Home pairing adds an actionable remote and sends exact cloud intents
   assert(x.result.device.capabilities.includes('onoff')); assert(!x.result.device.capabilities.includes('button.local_test'));
   await x.listeners.onoff(true);
   assert.deepEqual(scenario.directives[0], { namespace: 'DNA.PowerControl', action: 'ChangePowerState', payload: { powerState: 'ON' }, version: '2' });
-  await x.listeners['button.volume_down'](); assert.deepEqual(scenario.directives[1].payload, { volumeSteps: -1 });
+  await x.listeners.volume_down(); assert.deepEqual(scenario.directives[1].payload, { volumeSteps: -1 });
   assert.equal(scenario.localSends, 0); assert.equal(x.trigger.calls.length, 2);
   assert.equal(x.values.onoff, true);
+});
+
+test('TV startup succeeds when Homey rejects dynamic placeholder capability metadata', async () => {
+  const x = await newMagicDevice();
+  assert.throws(() => x.device.getCapabilityOptions('button.volume_up'), /Invalid Capability: button.volume_up/);
+  assert.equal(x.device.testUnavailable, false);
+  assert(x.device.hasCapability('volume_up'));
+  await x.listeners.volume_up(); assert.deepEqual(scenario.directives[0].payload, { volumeSteps: 1 });
+});
+
+test('v3.1.81 TV devices migrate controls and cached metadata without changing command Flow IDs', async () => {
+  const endpoint = { ...magicEndpoint, capabilities: [...magicEndpoint.capabilities, magicCap('DNA.PlaybackController', ['Play', 'Pause', 'Stop', 'Next', 'Previous'])] };
+  const x = await newMagicDevice(endpoint); await x.device.onUninit();
+  const legacy = copy(x.stored()); const mapping = require('../lib/RMMaxMagic').LEGACY_CONTROL_CAPABILITIES;
+  for (const command of legacy.commands) {
+    const old = Object.entries(mapping).find(([, current]) => current === command.capability);
+    if (old) command.capability = old[0];
+    else if (command.namespace.includes('Playback')) delete command.capability;
+  }
+  const migrated = makeDevice(x.driver, legacy);
+  migrated.device.testCaps = new Set(['rmmax_status', 'button.refresh', 'button.check_connection', 'onoff', ...Object.keys(mapping)]);
+  await migrated.device.onInit();
+  assert.equal(migrated.device.testUnavailable, false);
+  assert.deepEqual(migrated.stored().commands.map(c => c.id), legacy.commands.map(c => c.id));
+  for (const old of Object.keys(mapping)) assert.equal(migrated.device.hasCapability(old), false);
+  for (const id of ['volume_up', 'volume_down', 'rmmax_play', 'rmmax_pause', 'speaker_stop', 'speaker_next', 'speaker_prev']) assert(migrated.device.hasCapability(id));
+  await migrated.listeners.rmmax_pause(); assert.equal(scenario.directives[0].action, 'Pause');
+  await migrated.device.executeCommand({ variable: { id: legacy.commands[0].id } }); assert.equal(scenario.directives[1].action, 'ChangePowerState');
+});
+
+test('Homey capability initialization errors preserve the cause without alleging missing cloud authorization', async () => {
+  const x = await newMagicDevice(); const logs = []; x.device.log = message => logs.push(message);
+  x.device.testCaps.delete('volume_up');
+  const original = x.device.addCapability.bind(x.device);
+  x.device.addCapability = async id => { if (id === 'volume_up') throw Error('Invalid Capability: volume_up'); return original(id); };
+  await x.device.onInit();
+  assert.match(x.device.testUnavailable, /Homey controls/);
+  assert.match(logs.join('\n'), /Homey controls: Invalid Capability: volume_up/);
+  assert.equal(logs.join('\n').includes('initialization requires authorization'), false);
+  x.device.addCapability = original; await x.device.onInit(); assert.equal(x.device.testUnavailable, false);
 });
 
 test('Magic Home refresh updates learned cloud actions and retains existing IDs and Flows', async () => {
@@ -164,13 +213,13 @@ test('deletion during an outstanding cloud check prevents capability writes and 
 
 test('refresh adds new controls once and retains old capability IDs when actions disappear', async () => {
   const x = await newMagicDevice();
-  const firstListener = x.listeners['button.volume_up'];
+  const firstListener = x.listeners.volume_up;
   scenario.endpoints[0].capabilities.push(magicCap('DNA.PlaybackController', ['Play']));
-  await x.device.refreshCommands(); assert(x.device.hasCapability('button.play'));
-  assert.equal(x.listeners['button.volume_up'], firstListener);
+  await x.device.refreshCommands(); assert(x.device.hasCapability('rmmax_play'));
+  assert.equal(x.listeners.volume_up, firstListener);
   scenario.endpoints[0].capabilities = [magicCap('DNA.PowerControl', ['ChangePowerState'], ['powerState'])];
-  await x.device.refreshCommands(); assert(x.device.hasCapability('button.volume_up'));
-  assert.throws(() => x.listeners['button.volume_up'](), /no longer available/);
+  await x.device.refreshCommands(); assert(x.device.hasCapability('volume_up'));
+  assert.throws(() => x.listeners.volume_up(), /no longer available/);
 });
 
 test('a cloud outage leaves previously verified EU local control available', async () => {

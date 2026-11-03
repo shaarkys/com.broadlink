@@ -4,9 +4,9 @@ const Homey = require("homey");
 const { extractCredentials, isRMMaxEndpoint } = require("../../lib/BroadlinkCloud");
 const { clientFor, credentialFingerprint, deviceId, collectCommands, safeError, clone } = require("../../lib/RMMaxCommands");
 const local = require("../../lib/RMMaxLocal");
-const { magicProfile, capabilityIds, parameterCommand, sensorValue } = require("../../lib/RMMaxMagic");
+const { magicProfile, capabilityIds, parameterCommand, sensorValue, LEGACY_CONTROL_CAPABILITIES } = require("../../lib/RMMaxMagic");
 
-const BUTTONS = { "button.volume_up": "Volume up", "button.volume_down": "Volume down", "button.channel_up": "Channel up", "button.channel_down": "Channel down", "button.play": "Play", "button.pause": "Pause", "button.stop": "Stop" };
+const BUTTONS = ["volume_up", "volume_down", "channel_up", "channel_down", "rmmax_play", "rmmax_pause", "speaker_stop", "speaker_next", "speaker_prev"];
 
 class RMMaxDevice extends Homey.Device {
   async onInit() {
@@ -23,6 +23,7 @@ class RMMaxDevice extends Homey.Device {
     this._failures = 0;
     this._capListeners = new Set(["button.refresh"]);
     this.registerCapabilityListener("button.refresh", () => this.refreshCommands());
+    let stage = "authorization";
     try {
       const token = this.getStoreValue("bootstrapToken");
       if (token) {
@@ -32,15 +33,21 @@ class RMMaxDevice extends Homey.Device {
       }
       this._config = this.getStoreValue("rmmax_cloud");
       this._validateConfig(this._config);
+      stage = "Homey controls";
+      await this._normalizeMagicCommands();
       await this._syncCapabilities();
+      stage = "Homey status";
       await this._status("Commands ready; cloud connection check pending");
       await this.setAvailable();
       this.log(`RM Max initialized: ${this._config.commands.length} saved commands; transport=${this.getSetting("transport") || "cloud"}`);
       this._scheduleCloud(1000);
-    } catch (_) {
+    } catch (error) {
       if (this._stopped) return;
-      await this.setUnavailable("Authorization is missing or invalid. Use Repair to sign in again.");
-      this.log("RM Max initialization requires authorization through Repair");
+      const message = stage === "authorization" ? "Authorization is missing or invalid. Use Repair to sign in again." : "Homey controls could not be initialized. Update the app and use Repair if needed.";
+      await this.setUnavailable(message);
+      const invalid = /^Invalid Capability: ([a-z][a-z0-9_.]{0,63})$/.exec(error?.message || "");
+      const known = [...BUTTONS, ...Object.keys(LEGACY_CONTROL_CAPABILITIES), "rmmax_status", "button.refresh", "button.local_test", "button.check_connection"];
+      this.log(`RM Max initialization failed during ${stage}: ${invalid && known.includes(invalid[1]) ? invalid[0] : safeError(error)}`);
     }
   }
 
@@ -55,7 +62,8 @@ class RMMaxDevice extends Homey.Device {
       const profile = magicProfile(config.hub);
       const expected = new Map(profile.commands.map(command => [command.id, command]));
       if ((!profile.commands.length && !profile.sensors.length) || config.commands.length !== profile.commands.length || config.commands.some(command =>
-        !command || JSON.stringify(command) !== JSON.stringify(expected.get(command.id)))) throw new Error("Invalid cloud actions");
+        !command || !expected.has(command.id) ||
+        ["id", "name", "namespace", "action", "payload", "version"].some(key => JSON.stringify(command[key]) !== JSON.stringify(expected.get(command.id)[key])))) throw new Error("Invalid cloud actions");
       return;
     }
     if (new Set(config.commands.map(command => command.id)).size !== config.commands.length || config.commands.some(command =>
@@ -64,6 +72,16 @@ class RMMaxDevice extends Homey.Device {
   }
 
   async _status(message) { await this.setCapabilityValue("rmmax_status", message); }
+  async _normalizeMagicCommands() {
+    if (!this._isMagic()) return;
+    const commands = magicProfile(this._config.hub).commands;
+    if (JSON.stringify(commands) === JSON.stringify(this._config.commands)) return;
+    const generation = this._generation;
+    const config = { ...this._config, commands };
+    await this.setStoreValue("rmmax_cloud", config);
+    this._assertActive(generation); this._config = config;
+    this.log("RM Max command control metadata migrated; command and Flow identities preserved");
+  }
   _isMagic() { return this._config?.session.provider === "magic_home"; }
   _listen(capability, listener) {
     if (!this._capListeners.has(capability)) {
@@ -86,6 +104,13 @@ class RMMaxDevice extends Homey.Device {
         } catch (error) { this.log(`RM Max capability migration failed: ${capability}`); throw error; }
       }
     }
+    // v3.1.81 used UI placeholders; replace only those seven IDs after adding controls.
+    for (const capability of Object.keys(LEGACY_CONTROL_CAPABILITIES)) if (this.hasCapability(capability)) {
+      this.log(`RM Max replacing legacy control capability: ${capability}`);
+      await this.removeCapability(capability);
+      this._assertActive(generation); this._capListeners.delete(capability);
+      this.log(`RM Max legacy control capability migration completed: ${capability}`);
+    }
     if (this.hasCapability("button.local_test")) this._listen("button.local_test", () => this.probeLocal());
     this._listen("button.check_connection", () => this.refreshCommands());
     if (this.hasCapability("onoff")) this._listen("onoff", value => {
@@ -93,11 +118,7 @@ class RMMaxDevice extends Homey.Device {
       if (!command) throw new Error("This remote no longer advertises power control. Refresh commands.");
       return this.executeCommand({ variable: { id: command.id } });
     });
-    for (const [id, title] of Object.entries(BUTTONS)) if (this.hasCapability(id)) {
-      const icon = `/drivers/RM_max/assets/${id.includes("volume") ? "volume" : id.includes("channel") ? "channel" : "playback"}.svg`;
-      const options = this.getCapabilityOptions(id);
-      if (options.title !== title || options.icon !== icon) await this.setCapabilityOptions(id, { title, icon });
-      this._assertActive(generation);
+    for (const id of BUTTONS) if (this.hasCapability(id)) {
       this._listen(id, () => {
         const command = this._config.commands.find(c => c.capability === id);
         if (!command) throw new Error("This action is no longer available. Refresh commands.");

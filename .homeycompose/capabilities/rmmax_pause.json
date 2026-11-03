@@ -1,0 +1,9 @@
+{
+  "type": "boolean",
+  "title": { "en": "Pause", "nl": "Pauzeren" },
+  "getable": false,
+  "setable": true,
+  "insights": false,
+  "uiComponent": "button",
+  "icon": "/drivers/RM_max/assets/pause.svg"
+}

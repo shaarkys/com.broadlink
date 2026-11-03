@@ -1,0 +1,8 @@
+{
+  "source": "https://github.com/athombv/node-homey-lib/tree/master/assets/capability/capabilities",
+  "homeyLibVersion": "2.52.3",
+  "systemCapabilities": [
+    "button", "onoff", "volume_up", "volume_down", "channel_up", "channel_down",
+    "speaker_stop", "speaker_next", "speaker_prev", "measure_temperature", "measure_humidity"
+  ]
+}

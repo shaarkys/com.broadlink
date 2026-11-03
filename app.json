@@ -6474,6 +6474,30 @@
       "uiComponent": "toggle",
       "insights": false
     },
+    "rmmax_pause": {
+      "type": "boolean",
+      "title": {
+        "en": "Pause",
+        "nl": "Pauzeren"
+      },
+      "getable": false,
+      "setable": true,
+      "insights": false,
+      "uiComponent": "button",
+      "icon": "/drivers/RM_max/assets/pause.svg"
+    },
+    "rmmax_play": {
+      "type": "boolean",
+      "title": {
+        "en": "Play",
+        "nl": "Afspelen"
+      },
+      "getable": false,
+      "setable": true,
+      "insights": false,
+      "uiComponent": "button",
+      "icon": "/drivers/RM_max/assets/play.svg"
+    },
     "rmmax_status": {
       "type": "string",
       "title": {
