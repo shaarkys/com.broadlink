@@ -217,5 +217,8 @@
   },
   "3.1.80": {
     "en": "Improved RM Max Magic Home diagnostics to identify discovered device capabilities and custom-remote actions, while clarifying pairing limitations and keeping account credentials out of logs."
+  },
+  "3.1.81": {
+    "en": "Enabled adding Magic Home RM Max remotes and sensors with advertised cloud controls, automatic five-minute command/sensor refresh, connection monitoring and Repair guidance."
   }
 }
