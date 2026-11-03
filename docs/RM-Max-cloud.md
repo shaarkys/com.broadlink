@@ -61,6 +61,13 @@ Repair verifies the original account, home and device identity before replacemen
 Normal logs record inventory counts, command counts, local query outcome and
 firmware, refresh failure, and command acknowledgment/failure. They exclude
 passwords, tokens, keys, cookies, cloud response bodies and raw command payloads.
+Magic Home discovery also logs numbered endpoint summaries: parent relationships,
+allowlisted categories, interfaces and protocol actions/properties, and counts of other
+capabilities, including the number of custom-remote actions. Names, endpoint identifiers,
+unknown interface strings and property values
+are omitted. Summaries are limited to 20 endpoints and 32 capabilities per endpoint.
+The pairing list uses the same numbers; a product-ID match does not prove an entry
+is a separate physical hub.
 A failed local query clears earlier verification. Changing IP or receiving a new
 device key invalidates prior local verification. No polling or unlock attempts
 are introduced by this driver.
@@ -93,6 +100,9 @@ are introduced by this driver.
 
 - [BroadLink RM Max product image](https://www.ibroadlink.com/productinfo/1417762.html):
   manufacturer image used for the driver artwork.
+- [BroadLink cloud control documentation](https://tx.ibroadlink.com/public/dnaproxy/message_table/):
+  documented remote-control interfaces and custom-panel action discovery; actual
+  availability through a Magic Home account requires verification.
 - [homebridge-broadlink-cloud](https://github.com/skymike/homebridge-broadlink-cloud):
   EU login, family/device/remote discovery and raw-code cloud transport. Adapted
   protocol code retains its [MIT notice](licenses/homebridge-broadlink-cloud.txt).

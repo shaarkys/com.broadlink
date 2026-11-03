@@ -2,9 +2,37 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { collectCommands } = require("../lib/RMMaxCommands");
+const { collectCommands, magicEndpointDiagnostics } = require("../lib/RMMaxCommands");
 const hub = { endpointId: "hub", productId: "0000000000000000000000008baf0000" };
 const command = name => ({ name, codeList: [{ code: "b2000200aabb" }] });
+
+test("Magic Home diagnostics report bounded protocol metadata without account or device data", () => {
+  const secret = "private-secret-value";
+  const endpoints = [
+    { ...hub, friendlyName: secret, cookie: { pid: hub.productId, aeskeyToken: secret }, displayCategories: ["TV", secret],
+      capabilities: [{ interface: secret, actions: { supported: [{ name: "ChangePowerState" }, { name: secret }] },
+        properties: { supported: [{ name: "power", enums: [secret] }, { name: secret }] } },
+      { interface: "DNA.CustomizedRemoteControl", actions: { supported: [{ name: secret }] } }] },
+    { endpointId: secret, parentId: "hub", displayCategories: ["LIGHT"], capabilities: [] },
+    ...Array.from({ length: 25 }, (_, i) => ({ endpointId: `id-${i}` }))
+  ];
+  const result = magicEndpointDiagnostics(endpoints);
+  assert.equal(result.length, 20);
+  assert.deepEqual(result[0].categories, ["TV"]);
+  assert.equal(result[0].otherCategories, 1);
+  assert.deepEqual(result[0].knownActions, ["ChangePowerState"]);
+  assert.deepEqual(result[0].knownProperties, ["power"]);
+  assert.equal(result[0].actions, 3);
+  assert.deepEqual(result[0].knownInterfaces, ["DNA.CustomizedRemoteControl"]);
+  assert.equal(result[0].customRemoteActions, 1);
+  assert.equal(result[1].parent, 1);
+  assert.equal(JSON.stringify(result).includes(secret), false);
+  assert.equal(JSON.stringify(result).includes("hub"), false);
+  const many = magicEndpointDiagnostics([{ capabilities: Array.from({ length: 40 }, () => ({ actions: { supported: Array(100).fill({ name: "ChangePowerState" }) } })) }])[0];
+  assert.equal(many.capabilities, 40);
+  assert.equal(many.inspectedCapabilities, 32);
+  assert.deepEqual(many.knownActions, ["ChangePowerState"]);
+});
 
 test("identical or missing remote names receive distinct stable labels without changing command IDs", async () => {
   for (const friendlyName of ["Remote", undefined]) {

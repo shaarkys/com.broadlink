@@ -73,8 +73,16 @@ test('EU pairing previews ten named commands and UI payloads exclude secrets and
 test('Magic Home discovery is diagnostic only', async () => {
   reset(); const { driver } = makeDriver(); await driver.onInit(); const p = await pair(driver, 'magic_home');
   assert.deepEqual(p.discovery.summary, { devices: 2, hubs: 1, credentialSets: 1 }); assert.equal(p.discovery.commandImportSupported, false);
-  const preview = await p.handlers.cloud_preview({ hubId: 'hub1' }); assert.equal(preview.canAdd, false); assert.equal(preview.commands.length, 0); assert.match(preview.reason, /does not expose/);
+  const preview = await p.handlers.cloud_preview({ hubId: 'hub1' }); assert.equal(preview.canAdd, false); assert.equal(preview.commands.length, 0); assert.match(preview.reason, /cannot yet import/);
   await assert.rejects(p.handlers.cloud_complete({ hubId: 'hub1' })); assert.equal(JSON.stringify([p.login, p.discovery, preview]).includes('secret-token'), false);
+});
+test('Magic Home discovery logs safe endpoint capabilities and numbers matching choices', async () => {
+  reset(); scenario.endpoints = [{ ...hub, friendlyName: 'private name', cookie: 'private-cookie', capabilities: [{ interface: 'private interface', actions: { supported: [{ name: 'ChangePowerState' }, { name: 'private action' }] } }] }];
+  const { driver } = makeDriver(); const logs = []; driver.log = message => logs.push(message); await driver.onInit();
+  const p = await pair(driver, 'magic_home');
+  assert.equal(p.discovery.hubs[0].name, '#1 private name');
+  assert.match(logs.join('\n'), /knownActions.*ChangePowerState/);
+  for (const secret of ['private name', 'private-cookie', 'private interface', 'private action', 'secret-token']) assert.equal(logs.join('\n').includes(secret), false, secret);
 });
 test('bootstrap token is one-use and bound to the selected identity', async () => {
   reset(); const { driver } = makeDriver(); await driver.onInit(); const p = await pair(driver); await p.handlers.cloud_preview({ hubId: 'hub1' }); const result = await p.handlers.cloud_complete({ hubId: 'hub1' });

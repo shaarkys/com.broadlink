@@ -3,7 +3,7 @@
 const Homey = require("homey");
 const crypto = require("crypto");
 const { BroadlinkCloud, MagicHomeCloud, extractCredentials, isRMMaxEndpoint } = require("../../lib/BroadlinkCloud");
-const { clientFor, credentialFingerprint, deviceId, inventorySummary, collectCommands, safeError, clone } = require("../../lib/RMMaxCommands");
+const { clientFor, credentialFingerprint, deviceId, inventorySummary, magicEndpointDiagnostics, collectCommands, safeError, clone } = require("../../lib/RMMaxCommands");
 const local = require("../../lib/RMMaxLocal");
 
 class RMMaxDriver extends Homey.Driver {
@@ -87,8 +87,12 @@ class RMMaxDriver extends Homey.Driver {
       endpoints = found;
       const summary = inventorySummary(found);
       this.log(`RM Max ${account.provider} inventory: devices=${summary.devices}, hubs=${summary.hubs}, raw credential sets=${summary.credentialSets}`);
+      if (account.provider === "magic_home") {
+        for (const detail of magicEndpointDiagnostics(found)) this.log(`RM Max Magic Home endpoint: ${JSON.stringify(detail)}`);
+        if (found.length > 20) this.log(`RM Max Magic Home endpoint diagnostics limited to 20 of ${found.length} entries.`);
+      }
       return { provider: account.provider, hubs: found.filter(isRMMaxEndpoint).map(hub => ({ id: hub.endpointId,
-        name: typeof hub.friendlyName === "string" ? hub.friendlyName.slice(0, 256) : "RM Max", credentialsAvailable: !!extractCredentials(hub) })),
+        name: `${account.provider === "magic_home" ? `#${found.indexOf(hub) + 1} ` : ""}${typeof hub.friendlyName === "string" ? hub.friendlyName.slice(0, 256) : "RM Max"}`, credentialsAvailable: !!extractCredentials(hub) })),
       summary, commandImportSupported: account.provider === "broadlink_eu" };
     });
     handle("cloud_preview", async input => {
@@ -100,7 +104,7 @@ class RMMaxDriver extends Homey.Driver {
       return { commands: result.commands.map(({ id, name }) => ({ id, name })), skipped: result.skipped,
         rawCredentialsAvailable: !!extractCredentials(hub), canAdd,
         reason: canAdd ? "" : (result.supported ? "No supported saved commands were returned. Learn commands in the BroadLink app first." :
-          "Magic Home authorization and discovery succeeded, but its official API does not expose a verified saved IR/RF command query. This is a diagnostic result; full remote control is not enabled.") };
+          "Magic Home authorization and discovery succeeded. This test driver cannot yet import saved IR/RF commands or add the device; please submit a diagnostic report.") };
     });
     handle("cloud_probe", async input => {
       const hub = hubFor(input.hubId);
