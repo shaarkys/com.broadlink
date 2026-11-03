@@ -220,5 +220,8 @@
   },
   "3.1.81": {
     "en": "Enabled adding Magic Home RM Max remotes and sensors with advertised cloud controls, automatic five-minute command/sensor refresh, connection monitoring and Repair guidance."
+  },
+  "3.1.82": {
+    "en": "Fixed RM Max TV initialization and Repair by migrating controls to supported Homey capabilities, preserving saved-command Flow selections and improving startup error reporting."
   }
 }
