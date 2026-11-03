@@ -211,5 +211,8 @@
   },
   "3.1.78": {
     "en": "Added a separate experimental RM Max driver with BroadLink EU cloud command import/control, Magic Home authorization diagnostics, and a bounded local-credential test; preserved existing RM Max devices and Flows while removing RM Max from new RM4 Pro pairing."
+  },
+  "3.1.79": {
+    "en": "Improved RM Max Magic Home diagnostics to identify discovered device capabilities and custom-remote actions, while clarifying pairing limitations and keeping account credentials out of logs."
   }
 }
