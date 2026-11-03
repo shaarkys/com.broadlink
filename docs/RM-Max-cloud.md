@@ -11,12 +11,23 @@ still require a tester; mocked protocol and lifecycle tests are not hardware pro
   saved command**. Ten RF buttons can therefore be represented independently if
   the account returns all ten. Learn new buttons in the BroadLink app, then use
   **Refresh saved commands** in Homey. Learning directly in Homey is not provided.
-- **Magic Home authorization code:** uses BroadLink's official authorization and
-  discovery interface. This path currently provides diagnostics only. Its known
-  API does not establish a saved IR/RF code query, and it may omit the RM Max hub.
-  An opaque `aeskeyToken` is not treated as a raw local key. The UI reports this
-  limitation and does not create a falsely functional device. BroadLink and
-  Magic Home accounts/servers are not assumed interchangeable.
+- **Magic Home authorization code:** add each supported remote or sensor as its
+  own Homey device. Preview shows only advertised functions. Power, channel,
+  volume steps, mute and playback use documented cloud intents; custom buttons
+  are imported when `DNA.CustomizedRemoteControl` advertises them. Temperature
+  and humidity are available only for their matching sensor interfaces. The
+  generic command Flow covers exposed buttons; number-based channel and volume
+  actions require the corresponding advertised action. Unsupported requests fail
+  before sending. Power values represent the last acknowledged request, not a
+  measurement of the appliance. BroadLink and Magic Home accounts/servers are
+  not interchangeable.
+- **Learning and cloud updates:** learn in the vendor app. Refresh commands and
+  sensors with the device button or Flow, or wait for the automatic five-minute
+  refresh. Cloud button identifiers remain stable when the list is reordered or
+  new buttons are added. Renaming a custom button changes its identity. If Magic
+  Home exposes only one power action for a ten-button RF remote, Homey can offer
+  only power on/off. No hidden button names are guessed. Homey learning is not
+  implemented: this authorization route has no verified learning/storage API.
 - **Optional local transport:** when a cloud inventory provides a complete raw
   AES key, identifier and MAC, enter the RM Max's private IPv4 address and press
   **Test local credentials**. This sends one firmware query (`0x6a` / payload
@@ -25,6 +36,9 @@ still require a tester; mocked protocol and lifecycle tests are not hardware pro
   of those credentials, not an unlocked state. Only then can the device's
   Connection setting be changed to local. Local acceptance on RM Max firmware
   remains unverified until a tester confirms it.
+  This raw-code path applies to BroadLink EU only. Magic Home's `aeskeyToken` is
+  opaque authorization material, not a demonstrated AES key. Its intents contain
+  no raw codes, so local transport and unlock are not enabled for Magic Home.
 
 Cloud operation requires Internet access. No failed physical send is retried or
 automatically sent through another transport. Acknowledgment does not measure
@@ -43,7 +57,11 @@ Command identity uses the remote endpoint and command name. Reordering or adding
 buttons preserves existing selections. Renaming a button in the vendor app
 requires selecting that renamed command again in affected Flows. Duplicate names
 inside one remote and multi-code sequences are skipped explicitly. A failed
-refresh retains the previous collection. Identical display names across remotes
+cloud import retains the previous collection. A later sensor/UI error may leave a
+successfully imported collection in place while the device reports unavailable.
+New capabilities are added idempotently; existing capabilities are retained to
+preserve Flows if the cloud stops advertising an action. Their listeners reject
+actions that are no longer present. Identical display names across EU remotes
 include their stable remote identifier so targets can be distinguished. Maximum
 import: 50 remotes, 500 commands
 and 2 MiB of normalized command data; at most three remote reads are in flight.
@@ -57,6 +75,10 @@ to the new device; the sensitive configuration stays in the backend. Protect
 Homey backups, which may include stored sessions. Expired EU sessions require
 **Repair** and a fresh login; passwords are not retained for automatic login.
 Repair verifies the original account, home and device identity before replacement.
+For Magic Home, Repair checks the region, endpoint identity and previously
+supplied physical/module identifiers. A valid refreshed Magic Home session is
+persisted even when a subsequent request fails; a physical command is never
+resent automatically.
 
 Normal logs record inventory counts, command counts, local query outcome and
 firmware, refresh failure, and command acknowledgment/failure. They exclude
@@ -69,8 +91,26 @@ are omitted. Summaries are limited to 20 endpoints and 32 capabilities per endpo
 The pairing list uses the same numbers; a product-ID match does not prove an entry
 is a separate physical hub.
 A failed local query clears earlier verification. Changing IP or receiving a new
-device key invalidates prior local verification. No polling or unlock attempts
-are introduced by this driver.
+device key invalidates prior local verification. No unlock attempts are introduced.
+
+## Connection checks and recovery
+
+After initialization or Repair, a check is scheduled after one second. Subsequent
+checks run five minutes after the previous check finishes and also refresh cloud
+commands/sensors. One timer and one operation are active per device. Busy checks
+are deferred. One user operation may wait for a background check; further
+concurrent requests are rejected. Shutdown invalidates outstanding work, drains
+active requests and cancels the timer. Reinitialization waits for old work before
+starting another session/check.
+
+Missing/offline endpoints, failed sensor queries and network failures make cloud
+devices unavailable with an explanation. Transient failures retry after 1, 2, 4,
+8 and then at most 15 minutes. A successful check restores availability. Rejected
+authorization stops checking and requests **Repair**. Magic Home tokens refresh
+before expiry; EU expiry still requires a fresh login. Cloud discovery without an
+`isReachable` value establishes cloud access only; it does not prove the appliance
+is online. Previously verified EU local sending remains usable during a cloud
+outage. New physical sends are never retried or switched to another transport.
 
 ## Manual runtime checks (not executed by the implementation agent)
 
@@ -80,17 +120,25 @@ are introduced by this driver.
    correct region and discover. If that option is absent, report that fact; do not
    reset or remove the working vendor pairing. Submit a Homey diagnostic containing
    the inventory counts and safe failure/status, never the authorization code.
+   Select the TV or KaKu remote, preview its actions and add it. Add other remotes
+   or sensors individually. KaKu currently advertises power only in Ruud's report.
 3. Where a compatible BroadLink EU account already contains the RM Max and its
    remotes, choose that service, sign in and preview. Confirm all expected commands
    (including ten individually named RF buttons) appear before adding.
-4. Run one harmless saved command through the new Flow card and observe the
-   appliance. Confirm the sent trigger occurs only after acknowledgment. Test a
-   failed request and verify no automatic retry or transport switch occurs.
-5. Save the device IP, run **Test local credentials**, and check the normal log.
+4. Test power, volume/channel steps and playback where present. Confirm the actual
+   appliance response and that the sent trigger occurs only after acknowledgment.
+   Learn a new custom button in the vendor app; refresh manually, then confirm an
+   automatically refreshed button appears within five minutes. Check old Flow
+   selections still work. Sensor-only devices must show real reported readings.
+5. For BroadLink EU only, save the device IP, run **Test local credentials**, and check the normal log.
    A rejection or timeout is a diagnostic result, not an unlocked device. If the
    query succeeds, explicitly select local connection and test one command. Repeat
    with WAN disconnected only after local sending has worked with WAN connected.
-6. Restart the app, refresh commands, and use Repair with the same account. Check
+6. Briefly disable Internet, wait for a check and confirm cloud devices become
+   unavailable. Restore Internet and confirm automatic recovery; use **Check cloud
+   connection** for a manual check when available. Reject/expire authorization and
+   verify the unavailable message requests Repair. Renew through Repair and confirm
+   checks resume once. Restart the app, refresh commands, and Repair with the same account. Check
    existing command Flow selections remain usable. A different account/home/device
    must be rejected without replacing the saved configuration.
 7. Confirm an already-paired legacy RM Max and an RM4 Pro retain their existing
@@ -118,4 +166,4 @@ installation are part of this implementation.
 
 ## Changelog (unreleased)
 
-Added a separate experimental RM Max driver with BroadLink EU cloud command import/control, Magic Home authorization diagnostics, and a bounded local-credential test; preserved existing RM Max devices and Flows while removing RM Max from new RM4 Pro pairing.
+Enabled adding Magic Home RM Max remotes and sensors with advertised cloud controls, automatic five-minute command/sensor refresh, connection monitoring and Repair guidance; retained verified-key local control for BroadLink EU.

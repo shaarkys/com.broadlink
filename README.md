@@ -10,7 +10,7 @@ Use [Homey](https://www.athom.com/) together with [Broadlink devices](http://www
 * [RM Pro](http://www.ibroadlink.com/rmPro)  - IR
 * [RM Pro Plus](http://www.ibroadlink.com/rmPro+)   - IR + RF
 * RM4 Pro - IR + RF
-* [RM Max](docs/RM-Max-cloud.md) - experimental BroadLink EU saved IR/RF commands, cloud control and optional tested local credentials; Magic Home authorization diagnostics
+* [RM Max](docs/RM-Max-cloud.md) - BroadLink EU saved IR/RF commands and optional tested local credentials; Magic Home advertised remote controls and temperature/humidity sensors, automatic cloud refresh and connection recovery
 * SP1  - power socket switch
 * SP2  - power socket switch with nightlight and meter
 * SP3S - power socket switch with meter

@@ -75,3 +75,14 @@ test('malformed, expired, timeout and secret-bearing failures are safe', async (
   await assert.rejects(MagicHomeCloud.authorize('secret', 'eu', { request: async () => { throw new Error('secret token URL'); } }), e => !e.message.includes('secret'));
   await assert.rejects(MagicHomeCloud.authorize('code', 'eu', { request: async () => ({ expires_in: 0, status: 3 }) }), e => e.code === 'AUTH_REQUIRED');
 });
+
+test('Magic Home sensor query preserves context and the advertised interface version', async () => {
+  const cloud = new MagicHomeCloud(magicSession, { request: async (url, req) => {
+    const directive = JSON.parse(req.body).directive;
+    assert.equal(directive.header.interfaceVersion, '3');
+    assert.equal(directive.header.name, 'ReportState');
+    return { event: { payload: { status: 0 } }, context: { properties: [{ namespace: 'DNA.TemperatureSensor', name: 'temperature', value: { value: 22, scale: 'CELSIUS' } }] } };
+  } });
+  const response = await cloud.control({ endpointId: 'sensor', cookie: {} }, 'DNA.TemperatureSensor', 'ReportState', {}, '3');
+  assert.equal(response.context.properties[0].value.value, 22);
+});

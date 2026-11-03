@@ -1,30 +1,194 @@
 {
   "id": "RM_max",
-  "name": { "en": "RM Max", "nl": "RM Max" },
-  "images": { "small": "/drivers/RM_max/assets/images/small.png", "large": "/drivers/RM_max/assets/images/large.png" },
+  "name": {
+    "en": "RM Max",
+    "nl": "RM Max"
+  },
+  "images": {
+    "small": "/drivers/RM_max/assets/images/small.png",
+    "large": "/drivers/RM_max/assets/images/large.png"
+  },
   "class": "other",
-  "platforms": ["local"],
-  "connectivity": ["cloud", "lan"],
-  "capabilities": ["rmmax_status", "button.refresh", "button.local_test"],
+  "platforms": [
+    "local"
+  ],
+  "connectivity": [
+    "cloud",
+    "lan"
+  ],
+  "capabilities": [
+    "rmmax_status",
+    "button.refresh",
+    "button.local_test",
+    "button.check_connection"
+  ],
   "capabilitiesOptions": {
-    "button.refresh": { "title": { "en": "Refresh saved commands", "nl": "Opgeslagen commando's vernieuwen" } },
-    "button.local_test": { "title": { "en": "Test local credentials", "nl": "Lokale gegevens testen" } }
+    "button.refresh": {
+      "title": {
+        "en": "Refresh saved commands",
+        "nl": "Opgeslagen commando's vernieuwen"
+      }
+    },
+    "button.local_test": {
+      "title": {
+        "en": "Test local credentials",
+        "nl": "Lokale gegevens testen"
+      }
+    },
+    "button.check_connection": {
+      "title": {
+        "en": "Check cloud connection",
+        "nl": "Cloudverbinding controleren"
+      },
+      "icon": "/drivers/RM_max/assets/connection.svg"
+    }
   },
   "settings": [
-    { "id": "ipAddress", "type": "text", "value": "", "label": { "en": "Local IP address", "nl": "Lokaal IP-adres" } },
-    { "id": "transport", "type": "dropdown", "value": "cloud", "label": { "en": "Connection", "nl": "Verbinding" }, "values": [
-      { "id": "cloud", "label": { "en": "Cloud", "nl": "Cloud" } },
-      { "id": "local", "label": { "en": "Local after successful test", "nl": "Lokaal na geslaagde test" } }
-    ] }
+    {
+      "id": "ipAddress",
+      "type": "text",
+      "value": "",
+      "label": {
+        "en": "Local IP address",
+        "nl": "Lokaal IP-adres"
+      }
+    },
+    {
+      "id": "transport",
+      "type": "dropdown",
+      "value": "cloud",
+      "label": {
+        "en": "Connection",
+        "nl": "Verbinding"
+      },
+      "values": [
+        {
+          "id": "cloud",
+          "label": {
+            "en": "Cloud",
+            "nl": "Cloud"
+          }
+        },
+        {
+          "id": "local",
+          "label": {
+            "en": "Local after successful test",
+            "nl": "Lokaal na geslaagde test"
+          }
+        }
+      ]
+    }
   ],
-  "pair": [{ "id": "cloud" }],
-  "repair": [{ "id": "cloud" }],
+  "pair": [
+    {
+      "id": "cloud"
+    }
+  ],
+  "repair": [
+    {
+      "id": "cloud"
+    }
+  ],
   "$flow": {
-    "triggers": [{ "id": "RC_sent_any_rm_max", "title": { "en": "A remote command was sent", "nl": "Een afstandsbedieningscommando is verzonden" }, "tokens": [{ "name": "CommandSent", "type": "string", "title": { "en": "Command sent", "nl": "Verzonden commando" }, "example": { "en": "Power", "nl": "Aan/uit" } }] }],
+    "triggers": [
+      {
+        "id": "RC_sent_any_rm_max",
+        "title": {
+          "en": "A remote command was sent",
+          "nl": "Een afstandsbedieningscommando is verzonden"
+        },
+        "tokens": [
+          {
+            "name": "CommandSent",
+            "type": "string",
+            "title": {
+              "en": "Command sent",
+              "nl": "Verzonden commando"
+            },
+            "example": {
+              "en": "Power",
+              "nl": "Aan/uit"
+            }
+          }
+        ]
+      }
+    ],
     "actions": [
-      { "id": "send_command_rm_max", "title": { "en": "Send a saved command", "nl": "Verstuur een opgeslagen commando" }, "titleFormatted": { "en": "Send command [[variable]]", "nl": "Verstuur commando [[variable]]" }, "args": [{ "name": "variable", "type": "autocomplete", "placeholder": { "en": "Command", "nl": "Commando" } }] },
-      { "id": "refresh_commands_rm_max", "title": { "en": "Refresh saved commands", "nl": "Vernieuw opgeslagen commando's" } }
+      {
+        "id": "send_command_rm_max",
+        "title": {
+          "en": "Send a command",
+          "nl": "Verstuur een commando"
+        },
+        "titleFormatted": {
+          "en": "Send command [[variable]]",
+          "nl": "Verstuur commando [[variable]]"
+        },
+        "args": [
+          {
+            "name": "variable",
+            "type": "autocomplete",
+            "placeholder": {
+              "en": "Command",
+              "nl": "Commando"
+            }
+          }
+        ]
+      },
+      {
+        "id": "refresh_commands_rm_max",
+        "title": {
+          "en": "Refresh commands and sensors",
+          "nl": "Commando's en sensoren vernieuwen"
+        }
+      },
+      {
+        "id": "check_connection_rm_max",
+        "title": {
+          "en": "Check cloud connection",
+          "nl": "Controleer cloudverbinding"
+        }
+      },
+      {
+        "id": "set_channel_rm_max",
+        "title": {
+          "en": "Set channel",
+          "nl": "Stel kanaal in"
+        },
+        "titleFormatted": {
+          "en": "Set channel to [[channel]]",
+          "nl": "Stel kanaal in op [[channel]]"
+        },
+        "args": [
+          {
+            "name": "channel",
+            "type": "number",
+            "min": 1,
+            "max": 9999,
+            "step": 1
+          }
+        ]
+      },
+      {
+        "id": "set_volume_rm_max",
+        "title": {
+          "en": "Set volume",
+          "nl": "Stel volume in"
+        },
+        "titleFormatted": {
+          "en": "Set volume to [[volume]]",
+          "nl": "Stel volume in op [[volume]]"
+        },
+        "args": [
+          {
+            "name": "volume",
+            "type": "number",
+            "min": 0,
+            "max": 100,
+            "step": 1
+          }
+        ]
+      }
     ]
   }
 }
-

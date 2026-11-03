@@ -1567,8 +1567,8 @@
       {
         "id": "send_command_rm_max",
         "title": {
-          "en": "Send a saved command",
-          "nl": "Verstuur een opgeslagen commando"
+          "en": "Send a command",
+          "nl": "Verstuur een commando"
         },
         "titleFormatted": {
           "en": "Send command [[variable]]",
@@ -1593,14 +1593,78 @@
       {
         "id": "refresh_commands_rm_max",
         "title": {
-          "en": "Refresh saved commands",
-          "nl": "Vernieuw opgeslagen commando's"
+          "en": "Refresh commands and sensors",
+          "nl": "Commando's en sensoren vernieuwen"
         },
         "args": [
           {
             "type": "device",
             "name": "device",
             "filter": "driver_id=RM_max"
+          }
+        ]
+      },
+      {
+        "id": "check_connection_rm_max",
+        "title": {
+          "en": "Check cloud connection",
+          "nl": "Controleer cloudverbinding"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM_max"
+          }
+        ]
+      },
+      {
+        "id": "set_channel_rm_max",
+        "title": {
+          "en": "Set channel",
+          "nl": "Stel kanaal in"
+        },
+        "titleFormatted": {
+          "en": "Set channel to [[channel]]",
+          "nl": "Stel kanaal in op [[channel]]"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM_max"
+          },
+          {
+            "name": "channel",
+            "type": "number",
+            "min": 1,
+            "max": 9999,
+            "step": 1
+          }
+        ]
+      },
+      {
+        "id": "set_volume_rm_max",
+        "title": {
+          "en": "Set volume",
+          "nl": "Stel volume in"
+        },
+        "titleFormatted": {
+          "en": "Set volume to [[volume]]",
+          "nl": "Stel volume in op [[volume]]"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM_max"
+          },
+          {
+            "name": "volume",
+            "type": "number",
+            "min": 0,
+            "max": 100,
+            "step": 1
           }
         ]
       },
@@ -4423,7 +4487,8 @@
       "capabilities": [
         "rmmax_status",
         "button.refresh",
-        "button.local_test"
+        "button.local_test",
+        "button.check_connection"
       ],
       "capabilitiesOptions": {
         "button.refresh": {
@@ -4437,6 +4502,13 @@
             "en": "Test local credentials",
             "nl": "Lokale gegevens testen"
           }
+        },
+        "button.check_connection": {
+          "title": {
+            "en": "Check cloud connection",
+            "nl": "Cloudverbinding controleren"
+          },
+          "icon": "/drivers/RM_max/assets/connection.svg"
         }
       },
       "settings": [

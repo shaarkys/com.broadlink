@@ -68,3 +68,12 @@ test("oversized imports stop scheduling reads and drain already-started reads", 
   assert.equal(reads, 3);
   assert.equal(active, 0);
 });
+
+test("cancelled imports drain active reads without scheduling more cloud requests", async () => {
+  let active = true, calls = 0; const releases = [];
+  const endpoints = Array.from({ length: 10 }, (_, i) => ({ endpointId: `r-${i}`, gatewayId: "hub" }));
+  const client = { getSession: () => ({ provider: "broadlink_eu" }), getRemote: () => { calls++; return new Promise(resolve => releases.push(resolve)); } };
+  const pending = collectCommands(client, endpoints, hub, () => { if (!active) throw new Error("cancelled"); });
+  active = false; for (const release of releases) release({ irData: [] });
+  await assert.rejects(pending, /cancelled/); assert.equal(calls, 3);
+});

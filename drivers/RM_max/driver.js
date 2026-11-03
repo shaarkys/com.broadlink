@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const { BroadlinkCloud, MagicHomeCloud, extractCredentials, isRMMaxEndpoint } = require("../../lib/BroadlinkCloud");
 const { clientFor, credentialFingerprint, deviceId, inventorySummary, magicEndpointDiagnostics, collectCommands, safeError, clone } = require("../../lib/RMMaxCommands");
 const local = require("../../lib/RMMaxLocal");
+const { magicProfile, capabilityIds } = require("../../lib/RMMaxMagic");
 
 class RMMaxDriver extends Homey.Driver {
   async onInit() {
@@ -13,6 +14,9 @@ class RMMaxDriver extends Homey.Driver {
       .registerRunListener(args => args.device.executeCommand(args))
       .getArgument("variable").registerAutocompleteListener((query, args) => args.device.onAutoComplete(query));
     this.homey.flow.getActionCard("refresh_commands_rm_max").registerRunListener(args => args.device.refreshCommands());
+    this.homey.flow.getActionCard("check_connection_rm_max").registerRunListener(args => args.device.refreshCommands());
+    this.homey.flow.getActionCard("set_channel_rm_max").registerRunListener(args => args.device.executeParameter("channel", args.channel));
+    this.homey.flow.getActionCard("set_volume_rm_max").registerRunListener(args => args.device.executeParameter("volume", args.volume));
     this.commandSent = this.homey.flow.getDeviceTriggerCard("RC_sent_any_rm_max");
   }
 
@@ -93,20 +97,21 @@ class RMMaxDriver extends Homey.Driver {
       }
       return { provider: account.provider, hubs: found.filter(isRMMaxEndpoint).map(hub => ({ id: hub.endpointId,
         name: `${account.provider === "magic_home" ? `#${found.indexOf(hub) + 1} ` : ""}${typeof hub.friendlyName === "string" ? hub.friendlyName.slice(0, 256) : "RM Max"}`, credentialsAvailable: !!extractCredentials(hub) })),
-      summary, commandImportSupported: account.provider === "broadlink_eu" };
+      summary, commandImportSupported: true };
     });
     handle("cloud_preview", async input => {
       const hub = hubFor(input.hubId);
-      const result = await network(() => collectCommands(client, endpoints, hub));
+      const result = await network(() => collectCommands(client, endpoints, hub, assertActive));
       assertActive();
       preview = { hubId: hub.endpointId, ...result, localVerification: null };
-      const canAdd = result.supported && result.commands.length > 0;
+      const canAdd = result.supported && (result.commands.length > 0 || result.sensors?.length > 0);
       return { commands: result.commands.map(({ id, name }) => ({ id, name })), skipped: result.skipped,
-        rawCredentialsAvailable: !!extractCredentials(hub), canAdd,
-        reason: canAdd ? "" : (result.supported ? "No supported saved commands were returned. Learn commands in the BroadLink app first." :
-          "Magic Home authorization and discovery succeeded. This test driver cannot yet import saved IR/RF commands or add the device; please submit a diagnostic report.") };
+        rawCredentialsAvailable: client.getSession().provider === "broadlink_eu" && !!extractCredentials(hub), canAdd,
+        sensors: (result.sensors || []).map(sensor => sensor.capability),
+        reason: canAdd ? "" : "No supported commands or sensors were advertised for this entry. Learn or expose commands in the vendor app, then discover again." };
     });
     handle("cloud_probe", async input => {
+      if (client?.getSession().provider === "magic_home") throw new Error("Magic Home cloud actions do not provide raw IR/RF codes for local transport.");
       const hub = hubFor(input.hubId);
       if (preview) preview.localVerification = null;
       const credentials = extractCredentials(hub);
@@ -120,13 +125,14 @@ class RMMaxDriver extends Homey.Driver {
     });
     handle("cloud_complete", async input => {
       const hub = hubFor(input.hubId);
-      if (!preview || preview.hubId !== hub.endpointId || !preview.supported || !preview.commands.length) throw new Error("Preview supported saved commands before adding the device.");
+      if (!preview || preview.hubId !== hub.endpointId || !preview.supported || (!preview.commands.length && !preview.sensors?.length)) throw new Error("Preview supported commands or sensors before adding the device.");
       const account = client.getSession();
       const id = deviceId(account, hub);
       const bundle = clone({ session: account, hub, commands: preview.commands, localVerification: preview.localVerification });
       if (repairDevice) {
         const old = repairDevice.getStoreValue("rmmax_cloud");
-        if (id !== repairDevice.getData().id || (old && (old.session.userId !== account.userId || old.session.familyId !== account.familyId))) {
+        if (id !== repairDevice.getData().id || (old && (old.session.userId !== account.userId || old.session.familyId !== account.familyId || old.session.region !== account.region ||
+            ["did", "moduleid"].some(key => old.hub.cookie?.[key] && old.hub.cookie[key] !== hub.cookie?.[key])))) {
           throw new Error("Repair must use the original account, home and RM Max.");
         }
         await repairDevice.replaceCloudConfiguration(bundle);
@@ -138,7 +144,8 @@ class RMMaxDriver extends Homey.Driver {
       const timer = this.homey.setTimeout(() => this._pending.delete(token), 10 * 60 * 1000);
       this._pending.set(token, { id, bundle, timer, expires: Date.now() + 10 * 60 * 1000 });
       return { repair: false, device: { name: typeof hub.friendlyName === "string" ? hub.friendlyName.slice(0, 256) : "RM Max",
-        data: { id }, store: { bootstrapToken: token }, settings: { transport: "cloud", ipAddress: preview.localVerification ? preview.localVerification.ipAddress : "" } } };
+        data: { id }, ...(account.provider === "magic_home" ? { capabilities: capabilityIds(magicProfile(hub)) } : {}),
+        store: { bootstrapToken: token }, settings: { transport: "cloud", ipAddress: preview.localVerification ? preview.localVerification.ipAddress : "" } } };
     });
   }
 
