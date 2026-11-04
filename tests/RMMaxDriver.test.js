@@ -248,16 +248,90 @@ test('reinitialization waits for an old command and prevents duplicate polling o
   assert.equal(x.device._stopped, false); assert.equal(x.timers.size, 1); assert.equal(x.trigger.calls.length, 0); assert.equal(scenario.cloudSends, 1);
 });
 
-test('one user command waits for an automatic check without creating an unbounded send queue', async () => {
+test('three user commands wait for an automatic check and excess requests never send', async () => {
   const x = await newMagicDevice(); let release;
   scenario.listDevices = () => new Promise(resolve => { release = resolve; });
   const [id, timer] = [...x.timers.entries()][0]; x.timers.delete(id); const checking = timer.fn();
   const args = { variable: x.device.onAutoComplete()[0] };
-  const sending = x.device.executeCommand(args);
-  await assert.rejects(x.device.executeCommand(args), /still running/);
+  const sending = Array.from({ length: 3 }, () => x.device.executeCommand(args));
+  await assert.rejects(x.device.executeCommand(args), /three waiting/);
   assert.equal(scenario.cloudSends, 0);
-  release([copy(magicEndpoint)]); await checking; await sending;
-  assert.equal(scenario.cloudSends, 1); assert.equal(x.timers.size, 1);
+  release([copy(magicEndpoint)]); await checking; await Promise.all(sending);
+  assert.equal(scenario.cloudSends, 3); assert.equal(x.timers.size, 1);
+});
+
+test('button presses behind an active command run once in FIFO order without overlapping requests', async () => {
+  const x = await newMagicDevice(); const requests = [];
+  scenario.control = () => new Promise(resolve => requests.push(resolve));
+  const first = x.listeners.volume_up();
+  const pending = [x.listeners.onoff(false), x.listeners.volume_down(), x.listeners.onoff(true)];
+  await assert.rejects(x.listeners.volume_up(), /three waiting/);
+  assert.equal(scenario.cloudSends, 1);
+  assert.equal([...x.timers.values()].filter(timer => timer.ms === 5000).length, 3);
+  for (let i = 0; i < 4; i++) {
+    assert.equal(requests.length, i + 1);
+    requests[i]({}); await new Promise(resolve => setImmediate(resolve));
+  }
+  await Promise.all([first, ...pending]);
+  assert.deepEqual(scenario.directives.map(d => d.payload), [{ volumeSteps: 1 }, { powerState: 'OFF' }, { volumeSteps: -1 }, { powerState: 'ON' }]);
+  assert.equal(x.trigger.calls.length, 4); assert.equal(x.timers.size, 1); assert.equal(x.device._busy, false);
+});
+
+test('a waiting press expires without sending and a later fresh press still works', async () => {
+  const x = await newMagicDevice(); let release;
+  const logs = []; x.device.log = message => logs.push(message);
+  scenario.control = () => new Promise(resolve => { release = resolve; });
+  const first = x.listeners.volume_up();
+  const expired = assert.rejects(x.listeners.volume_down(), /waiting operation was not started/);
+  const [id, timer] = [...x.timers.entries()].find(([, timer]) => timer.ms === 5000);
+  x.timers.delete(id); timer.fn(); await expired;
+  assert.equal(scenario.cloudSends, 1); assert.equal(x.device._busy, true);
+  scenario.control = async () => ({});
+  const fresh = x.listeners.onoff(false); release({}); await Promise.all([first, fresh]);
+  assert.equal(scenario.cloudSends, 2); assert.equal(x.device._busy, false); assert.equal(x.timers.size, 1);
+  assert.deepEqual(scenario.directives.map(d => d.payload), [{ volumeSteps: 1 }, { powerState: 'OFF' }]);
+  assert.match(logs.join('\n'), /expired without starting: command; active=command; activeMs=\d+/);
+  assert.match(logs.join('\n'), /operation finished: command; durationMs=\d+/);
+  for (const secret of ['secret-token', 'secret-refresh', 'opaque-secret', 'physical-hub', 'volumeSteps']) assert.equal(logs.join('\n').includes(secret), false, secret);
+});
+
+test('overdue waiting work is rejected even before its delayed timer fires', async () => {
+  const x = await newMagicDevice(); let release;
+  scenario.control = () => new Promise(resolve => { release = resolve; });
+  const first = x.listeners.volume_up();
+  const expired = assert.rejects(x.listeners.volume_down(), /waiting operation was not started/);
+  x.device._waitingOperations[0].queuedAt = Date.now() - 5001;
+  release({}); await Promise.all([first, expired]);
+  assert.equal(scenario.cloudSends, 1); assert.equal(x.device._busy, false); assert.equal(x.timers.size, 1);
+});
+
+test('a failed active request releases the queue without retrying that physical command', async () => {
+  const x = await newMagicDevice(); let fail;
+  scenario.control = () => new Promise((resolve, reject) => { fail = reject; });
+  const first = assert.rejects(x.listeners.volume_up());
+  const next = x.listeners.onoff(false);
+  scenario.control = async () => ({}); fail(Object.assign(new Error('timed out'), { code: 'TIMEOUT' }));
+  await Promise.all([first, next]);
+  assert.equal(scenario.cloudSends, 2); assert.equal(x.trigger.calls.length, 1);
+  assert.deepEqual(scenario.directives.map(d => d.payload), [{ volumeSteps: 1 }, { powerState: 'OFF' }]);
+  assert.equal(x.device._busy, false); assert.equal([...x.timers.values()].filter(timer => timer.ms === 5000).length, 0);
+});
+
+test('shutdown and reinitialization cancel waiting commands and their timers before draining active work', async () => {
+  for (const lifecycle of ['onUninit', 'onInit']) {
+    const x = await newMagicDevice(); let release;
+    scenario.control = () => new Promise(resolve => { release = resolve; });
+    const first = assert.rejects(x.listeners.volume_up(), /cancelled/);
+    const waiting = assert.rejects(x.listeners.volume_down(), /cancelled/);
+    const finishing = x.device[lifecycle]();
+    await waiting;
+    assert.equal(x.timers.size, 0); assert.equal(scenario.cloudSends, 1);
+    release({}); await Promise.all([first, finishing]);
+    assert.equal(x.trigger.calls.length, 0); assert.equal(x.timers.size, lifecycle === 'onInit' ? 1 : 0);
+    if (lifecycle === 'onInit') {
+      scenario.control = async () => ({}); await x.listeners.onoff(false); assert.equal(scenario.cloudSends, 2);
+    }
+  }
 });
 
 test('EU pairing previews ten named commands and UI payloads exclude secrets and codes', async () => {

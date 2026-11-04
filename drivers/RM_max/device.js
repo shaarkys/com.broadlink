@@ -7,17 +7,18 @@ const local = require("../../lib/RMMaxLocal");
 const { magicProfile, capabilityIds, parameterCommand, sensorValue, LEGACY_CONTROL_CAPABILITIES } = require("../../lib/RMMaxMagic");
 
 const BUTTONS = ["volume_up", "volume_down", "channel_up", "channel_down", "rmmax_play", "rmmax_pause", "speaker_stop", "speaker_next", "speaker_prev"];
+const MAX_WAITING_OPERATIONS = 3;
+const OPERATION_WAIT_MS = 5000;
 
 class RMMaxDevice extends Homey.Device {
   async onInit() {
     this._stopPolling();
     this._generation = (this._generation || 0) + 1;
     this._stopped = true;
+    this._cancelWaitingOperations();
     if (this._operation) await this._operation.catch(() => {});
     this._stopped = false;
     this._busy = false;
-    this._backgroundCheck = false;
-    this._waitingCommand = false;
     this._client = null;
     this._authRequired = false;
     this._failures = 0;
@@ -139,9 +140,7 @@ class RMMaxDevice extends Homey.Device {
       this._pollTimer = undefined;
       if (this._stopped || generation !== this._generation) return;
       if (this._busy) { this._scheduleCloud(30000); return; }
-      this._backgroundCheck = true;
-      try { await this.refreshCommands(); } catch (_) { /* Failure and recovery are recorded by refreshCommands. */ }
-      finally { if (generation === this._generation) this._backgroundCheck = false; }
+      try { await this.refreshCommands(true); } catch (_) { /* Failure and recovery are recorded by refreshCommands. */ }
     }, delay);
   }
 
@@ -184,25 +183,73 @@ class RMMaxDevice extends Homey.Device {
   }
   _assertActive(generation) { if (this._stopped || this._generation !== generation) throw new Error("Device operation was cancelled."); }
 
-  async _exclusive(action) {
+  async _exclusive(action, kind = "operation") {
     if (this._stopped) throw new Error("Device is unavailable.");
+    if (!this._waitingOperations) this._waitingOperations = [];
+    const queue = this._waitingOperations;
     if (this._busy) {
-      if (!this._backgroundCheck || this._waitingCommand) throw new Error("Another RM Max operation is still running.");
-      const waitingGeneration = this._generation;
-      this._waitingCommand = true;
-      try { await this._operation.catch(() => {}); this._assertActive(waitingGeneration); }
-      finally { if (waitingGeneration === this._generation) this._waitingCommand = false; }
-      if (this._busy) throw new Error("Another RM Max operation is still running.");
+      if (queue.length >= MAX_WAITING_OPERATIONS) {
+        this.log(`RM Max operation queue full: active=${this._operationKind}; waiting=${queue.length}`);
+        throw new Error("RM Max already has three waiting operations. Wait a moment and try again.");
+      }
+      return new Promise((resolve, reject) => {
+        const entry = { action, kind, generation: this._generation, queuedAt: Date.now(), resolve, reject };
+        entry.timer = this.homey.setTimeout(() => {
+          const index = queue.indexOf(entry);
+          if (index < 0) return;
+          queue.splice(index, 1);
+          this.log(`RM Max waiting operation expired without starting: ${kind}; active=${this._operationKind}; activeMs=${Date.now() - this._operationStarted}`);
+          reject(new Error("RM Max is taking too long. This waiting operation was not started. Try again."));
+        }, OPERATION_WAIT_MS);
+        queue.push(entry);
+        this.log(`RM Max operation queued: ${kind}; active=${this._operationKind}; waiting=${queue.length}`);
+      });
     }
+    return this._runOperation(action, kind, this._generation);
+  }
+
+  async _runOperation(action, kind, generation) {
+    this._assertActive(generation);
     this._busy = true;
-    const generation = this._generation;
+    this._operationKind = kind;
+    this._operationStarted = Date.now();
+    const started = this._operationStarted;
+    this.log(`RM Max operation started: ${kind}`);
     const operation = (async () => { this._assertActive(generation); return action(generation); })();
     this._operation = operation;
     try { return await operation; }
     finally {
       if (this._operation === operation) this._operation = null;
-      if (generation === this._generation) this._busy = false;
+      this.log(`RM Max operation finished: ${kind}; durationMs=${Date.now() - started}`);
+      if (generation === this._generation) {
+        this._busy = false;
+        this._operationKind = null;
+        let next;
+        while ((next = this._waitingOperations.shift())) {
+          this.homey.clearTimeout(next.timer);
+          const waited = Date.now() - next.queuedAt;
+          // Timers can run late; expired work must also be rejected before it starts.
+          if (waited >= OPERATION_WAIT_MS) {
+            this.log(`RM Max waiting operation expired without starting: ${next.kind}; waitedMs=${waited}`);
+            next.reject(new Error("RM Max is taking too long. This waiting operation was not started. Try again."));
+            continue;
+          }
+          this.log(`RM Max waiting operation starting: ${next.kind}; waitedMs=${waited}`);
+          this._runOperation(next.action, next.kind, next.generation).then(next.resolve, next.reject);
+          break;
+        }
+      }
     }
+  }
+
+  _cancelWaitingOperations() {
+    const waiting = (this._waitingOperations || []).splice(0);
+    this._waitingOperations = [];
+    for (const entry of waiting) {
+      this.homey.clearTimeout(entry.timer);
+      entry.reject(new Error("Device operation was cancelled."));
+    }
+    if (waiting.length) this.log(`RM Max waiting operations cancelled: ${waiting.length}`);
   }
 
   onAutoComplete(query = "") {
@@ -224,10 +271,10 @@ class RMMaxDevice extends Homey.Device {
       await this._status("Authorization renewed; saved commands ready");
       this.log(`RM Max authorization renewed: ${bundle.commands.length} saved commands`);
       this._scheduleCloud(1000);
-    });
+    }, "repair");
   }
 
-  async refreshCommands() {
+  async refreshCommands(automatic = false) {
     return this._exclusive(async generation => {
       this._validateConfig(this._config);
       try {
@@ -277,7 +324,7 @@ class RMMaxDevice extends Homey.Device {
         await this._connectionFailure(error, generation);
         throw new Error(message);
       }
-    });
+    }, automatic ? "automatic refresh" : "refresh");
   }
 
   _localInput(ipAddress) {
@@ -319,7 +366,7 @@ class RMMaxDevice extends Homey.Device {
         await this._status(message);
         throw new Error(message);
       }
-    });
+    }, "local credential check");
   }
 
   async executeCommand(args) {
@@ -328,7 +375,7 @@ class RMMaxDevice extends Homey.Device {
       const command = this._config.commands.find(item => args.variable && item.id === args.variable.id);
       if (!command) throw new Error("Saved command no longer exists. Refresh commands and select it again in the Flow.");
       return this._sendCommand(command, generation);
-    });
+    }, "command");
   }
 
   async executeParameter(type, value) {
@@ -336,7 +383,7 @@ class RMMaxDevice extends Homey.Device {
       this._validateConfig(this._config);
       if (!this._isMagic()) throw new Error("This action requires a Magic Home remote.");
       return this._sendCommand(parameterCommand(this._config.hub, type, value), generation);
-    });
+    }, "parameterized command");
   }
 
   async _sendCommand(command, generation) {
@@ -386,11 +433,12 @@ class RMMaxDevice extends Homey.Device {
         await this.setStoreValue("rmmax_cloud", config);
         this._assertActive(generation); this._config = config;
       }
-    });
+    }, "settings");
   }
 
   async onUninit() {
     this._stopPolling(); this._stopped = true; this._generation = (this._generation || 0) + 1;
+    this._cancelWaitingOperations();
     if (this._operation) await this._operation.catch(() => {});
   }
   onDeleted() { return this.onUninit(); }

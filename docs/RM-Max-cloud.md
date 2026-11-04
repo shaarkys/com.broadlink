@@ -105,6 +105,11 @@ resent automatically.
 Normal logs record inventory counts, command counts, local query outcome and
 firmware, refresh failure, and command acknowledgment/failure. They exclude
 passwords, tokens, keys, cookies, cloud response bodies and raw command payloads.
+RM Max operation logs also record the operation type, start/finish duration,
+queue depth, waiting duration, expiration and cancellation. These labels describe
+commands, refreshes, Repair, settings or credential checks; they contain no
+user-defined button names. A waiting timeout includes the active operation type
+and elapsed duration so a diagnostic can identify what was still running.
 Magic Home discovery also logs numbered endpoint summaries: parent relationships,
 allowlisted categories, interfaces and protocol actions/properties, and counts of other
 capabilities, including the number of custom-remote actions. Names, endpoint identifiers,
@@ -119,11 +124,18 @@ device key invalidates prior local verification. No unlock attempts are introduc
 
 After initialization or Repair, a check is scheduled after one second. Subsequent
 checks run five minutes after the previous check finishes and also refresh cloud
-commands/sensors. One timer and one operation are active per device. Busy checks
-are deferred. One user operation may wait for a background check; further
-concurrent requests are rejected. Shutdown invalidates outstanding work, drains
-active requests and cancels the timer. Reinitialization waits for old work before
-starting another session/check.
+commands/sensors. One cloud-check timer and one operation are active per device.
+Busy automatic checks are deferred. Up to three user operations can wait behind
+an active command, manual operation or automatic check, in arrival order. Each
+waiting operation has a five-second deadline and its own timeout. A full queue
+or expired wait returns an explicit error without starting that operation.
+Deadlines are checked again before starting, including when a timeout callback
+is delayed. Failed requests release the queue; failed physical sends are not
+retried. Shutdown and reinitialization cancel all waiting operations and their
+timers, invalidate outstanding work and drain the active request before starting
+another session/check. The active operation is never forcibly released while
+its request is still pending. This addresses overlapping button presses; a
+persistent stall still needs a diagnostic identifying the unfinished operation.
 
 Missing/offline endpoints, failed sensor queries and network failures make cloud
 devices unavailable with an explanation. Transient failures retry after 1, 2, 4,
@@ -165,6 +177,13 @@ outage. New physical sends are never retried or switched to another transport.
    must be rejected without replacing the saved configuration.
 7. Confirm an already-paired legacy RM Max and an RM4 Pro retain their existing
    settings/Flows, and that new RM4 Pro discovery no longer offers RM Max.
+8. Press two or three different RM Max controls quickly while the cloud is
+   responsive, and repeat during a manual command refresh. Confirm they execute
+   once, in order. With a slow request, confirm a waiting operation expires after
+   five seconds and never executes later. Restart while work is waiting and
+   confirm the waiting commands are cancelled. If the driver remains busy,
+   submit a diagnostic before restarting so the active operation and duration
+   are available; report whether the appliance actually responded.
 
 ## Sources and attribution
 
@@ -187,5 +206,9 @@ No production dependencies, app version changes, commits, publishing or device
 installation are part of this implementation.
 
 ## Changelog (unreleased)
+
+Improved RM Max handling of overlapping controls with a three-operation queue, a five-second waiting limit, cancellation of expired or stopped work, and operation timing diagnostics.
+
+## Changelog (v3.1.82)
 
 Fixed RM Max TV initialization and Repair by migrating control placeholders to supported Homey capabilities, preserving saved command Flow selections and reporting control setup errors separately from authorization failures.
