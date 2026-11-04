@@ -223,5 +223,8 @@
   },
   "3.1.82": {
     "en": "Fixed RM Max TV initialization and Repair by migrating controls to supported Homey capabilities, preserving saved-command Flow selections and improving startup error reporting."
+  },
+  "3.1.83": {
+    "en": "Improved RM Max handling of overlapping controls with a bounded operation queue, five-second waiting expiry, and operation timing diagnostics."
   }
 }
