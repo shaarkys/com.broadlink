@@ -1,0 +1,12 @@
+{
+  "type": "boolean",
+  "title": {
+    "en": "Command",
+    "nl": "Commando"
+  },
+  "getable": false,
+  "setable": true,
+  "insights": false,
+  "uiComponent": "button",
+  "icon": "/assets/rm-cloud/command.svg"
+}

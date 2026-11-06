@@ -7,6 +7,7 @@
     "lib": "lib"
   },
   "scripts": {
+    "generate:rm-cloud-views": "node scripts/sync-rm-cloud-views.js",
     "test": "node --test tests/*.test.js"
   },
   "keywords": [],

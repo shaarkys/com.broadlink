@@ -1,0 +1,111 @@
+{
+  "id": "RM3_mini_cloud",
+  "name": {
+    "en": "RM3 Mini (Cloud)",
+    "nl": "RM3 Mini (Cloud)"
+  },
+  "images": {
+    "small": "/drivers/RM3_mini_cloud/assets/images/small.jpg",
+    "large": "/drivers/RM3_mini_cloud/assets/images/large.jpg"
+  },
+  "class": "other",
+  "platforms": [
+    "local"
+  ],
+  "connectivity": [
+    "cloud"
+  ],
+  "capabilities": [
+    "rmmax_status",
+    "button.refresh",
+    "button.check_connection"
+  ],
+  "capabilitiesOptions": {
+    "button.refresh": {
+      "title": {
+        "en": "Refresh saved commands",
+        "nl": "Opgeslagen commando's vernieuwen"
+      },
+      "icon": "/assets/rm-cloud/refresh.svg"
+    },
+    "button.check_connection": {
+      "title": {
+        "en": "Check cloud connection",
+        "nl": "Cloudverbinding controleren"
+      },
+      "icon": "/drivers/RM_max/assets/connection.svg"
+    }
+  },
+  "pair": [
+    {
+      "id": "cloud"
+    }
+  ],
+  "repair": [
+    {
+      "id": "cloud"
+    }
+  ],
+  "$flow": {
+    "triggers": [
+      {
+        "id": "RC_sent_any_rm3_mini_cloud",
+        "title": {
+          "en": "A remote command was sent",
+          "nl": "Een afstandsbedieningscommando is verzonden"
+        },
+        "tokens": [
+          {
+            "name": "CommandSent",
+            "type": "string",
+            "title": {
+              "en": "Command sent",
+              "nl": "Verzonden commando"
+            },
+            "example": {
+              "en": "Power",
+              "nl": "Aan/uit"
+            }
+          }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "id": "send_command_rm3_mini_cloud",
+        "title": {
+          "en": "Send a command",
+          "nl": "Verstuur een commando"
+        },
+        "titleFormatted": {
+          "en": "Send command [[variable]]",
+          "nl": "Verstuur commando [[variable]]"
+        },
+        "args": [
+          {
+            "name": "variable",
+            "type": "autocomplete",
+            "placeholder": {
+              "en": "Command",
+              "nl": "Commando"
+            }
+          }
+        ]
+      },
+      {
+        "id": "refresh_commands_rm3_mini_cloud",
+        "title": {
+          "en": "Refresh saved commands",
+          "nl": "Opgeslagen commando's vernieuwen"
+        }
+      },
+      {
+        "id": "check_connection_rm3_mini_cloud",
+        "title": {
+          "en": "Check cloud connection",
+          "nl": "Controleer cloudverbinding"
+        }
+      }
+    ]
+  }
+}

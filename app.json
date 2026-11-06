@@ -467,6 +467,34 @@
         ]
       },
       {
+        "id": "RC_sent_any_rm3_mini_cloud",
+        "title": {
+          "en": "A remote command was sent",
+          "nl": "Een afstandsbedieningscommando is verzonden"
+        },
+        "tokens": [
+          {
+            "name": "CommandSent",
+            "type": "string",
+            "title": {
+              "en": "Command sent",
+              "nl": "Verzonden commando"
+            },
+            "example": {
+              "en": "Power",
+              "nl": "Aan/uit"
+            }
+          }
+        ],
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM3_mini_cloud"
+          }
+        ]
+      },
+      {
         "id": "RC_sent_any_rm4_mini",
         "title": {
           "en": "Any Remote Command transmitted",
@@ -521,6 +549,34 @@
         ]
       },
       {
+        "id": "RC_sent_any_rm4_mini_cloud",
+        "title": {
+          "en": "A remote command was sent",
+          "nl": "Een afstandsbedieningscommando is verzonden"
+        },
+        "tokens": [
+          {
+            "name": "CommandSent",
+            "type": "string",
+            "title": {
+              "en": "Command sent",
+              "nl": "Verzonden commando"
+            },
+            "example": {
+              "en": "Power",
+              "nl": "Aan/uit"
+            }
+          }
+        ],
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM4_mini_cloud"
+          }
+        ]
+      },
+      {
         "id": "RC_sent_any_rm4_pro",
         "title": {
           "en": "Any Remote Command transmitted",
@@ -571,6 +627,34 @@
               "en": "name",
               "nl": "naam"
             }
+          }
+        ]
+      },
+      {
+        "id": "RC_sent_any_rm4_pro_cloud",
+        "title": {
+          "en": "A remote command was sent",
+          "nl": "Een afstandsbedieningscommando is verzonden"
+        },
+        "tokens": [
+          {
+            "name": "CommandSent",
+            "type": "string",
+            "title": {
+              "en": "Command sent",
+              "nl": "Verzonden commando"
+            },
+            "example": {
+              "en": "Power",
+              "nl": "Aan/uit"
+            }
+          }
+        ],
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM4_pro_cloud"
           }
         ]
       },
@@ -1513,6 +1597,60 @@
         ]
       },
       {
+        "id": "send_command_rm3_mini_cloud",
+        "title": {
+          "en": "Send a command",
+          "nl": "Verstuur een commando"
+        },
+        "titleFormatted": {
+          "en": "Send command [[variable]]",
+          "nl": "Verstuur commando [[variable]]"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM3_mini_cloud"
+          },
+          {
+            "name": "variable",
+            "type": "autocomplete",
+            "placeholder": {
+              "en": "Command",
+              "nl": "Commando"
+            }
+          }
+        ]
+      },
+      {
+        "id": "refresh_commands_rm3_mini_cloud",
+        "title": {
+          "en": "Refresh saved commands",
+          "nl": "Opgeslagen commando's vernieuwen"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM3_mini_cloud"
+          }
+        ]
+      },
+      {
+        "id": "check_connection_rm3_mini_cloud",
+        "title": {
+          "en": "Check cloud connection",
+          "nl": "Controleer cloudverbinding"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM3_mini_cloud"
+          }
+        ]
+      },
+      {
         "id": "send_command_rm4_mini",
         "title": {
           "en": "Send Remote Command",
@@ -1539,6 +1677,60 @@
         ]
       },
       {
+        "id": "send_command_rm4_mini_cloud",
+        "title": {
+          "en": "Send a command",
+          "nl": "Verstuur een commando"
+        },
+        "titleFormatted": {
+          "en": "Send command [[variable]]",
+          "nl": "Verstuur commando [[variable]]"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM4_mini_cloud"
+          },
+          {
+            "name": "variable",
+            "type": "autocomplete",
+            "placeholder": {
+              "en": "Command",
+              "nl": "Commando"
+            }
+          }
+        ]
+      },
+      {
+        "id": "refresh_commands_rm4_mini_cloud",
+        "title": {
+          "en": "Refresh saved commands",
+          "nl": "Opgeslagen commando's vernieuwen"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM4_mini_cloud"
+          }
+        ]
+      },
+      {
+        "id": "check_connection_rm4_mini_cloud",
+        "title": {
+          "en": "Check cloud connection",
+          "nl": "Controleer cloudverbinding"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM4_mini_cloud"
+          }
+        ]
+      },
+      {
         "id": "send_command_rm4_pro",
         "title": {
           "en": "Send Remote Command",
@@ -1561,6 +1753,60 @@
               "en": "name",
               "nl": "naam"
             }
+          }
+        ]
+      },
+      {
+        "id": "send_command_rm4_pro_cloud",
+        "title": {
+          "en": "Send a command",
+          "nl": "Verstuur een commando"
+        },
+        "titleFormatted": {
+          "en": "Send command [[variable]]",
+          "nl": "Verstuur commando [[variable]]"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM4_pro_cloud"
+          },
+          {
+            "name": "variable",
+            "type": "autocomplete",
+            "placeholder": {
+              "en": "Command",
+              "nl": "Commando"
+            }
+          }
+        ]
+      },
+      {
+        "id": "refresh_commands_rm4_pro_cloud",
+        "title": {
+          "en": "Refresh saved commands",
+          "nl": "Opgeslagen commando's vernieuwen"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM4_pro_cloud"
+          }
+        ]
+      },
+      {
+        "id": "check_connection_rm4_pro_cloud",
+        "title": {
+          "en": "Check cloud connection",
+          "nl": "Controleer cloudverbinding"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM4_pro_cloud"
           }
         ]
       },
@@ -3393,6 +3639,55 @@
       ]
     },
     {
+      "id": "RM3_mini_cloud",
+      "name": {
+        "en": "RM3 Mini (Cloud)",
+        "nl": "RM3 Mini (Cloud)"
+      },
+      "images": {
+        "small": "/drivers/RM3_mini_cloud/assets/images/small.jpg",
+        "large": "/drivers/RM3_mini_cloud/assets/images/large.jpg"
+      },
+      "class": "other",
+      "platforms": [
+        "local"
+      ],
+      "connectivity": [
+        "cloud"
+      ],
+      "capabilities": [
+        "rmmax_status",
+        "button.refresh",
+        "button.check_connection"
+      ],
+      "capabilitiesOptions": {
+        "button.refresh": {
+          "title": {
+            "en": "Refresh saved commands",
+            "nl": "Opgeslagen commando's vernieuwen"
+          },
+          "icon": "/assets/rm-cloud/refresh.svg"
+        },
+        "button.check_connection": {
+          "title": {
+            "en": "Check cloud connection",
+            "nl": "Cloudverbinding controleren"
+          },
+          "icon": "/drivers/RM_max/assets/connection.svg"
+        }
+      },
+      "pair": [
+        {
+          "id": "cloud"
+        }
+      ],
+      "repair": [
+        {
+          "id": "cloud"
+        }
+      ]
+    },
+    {
       "settings": [
         {
           "id": "RcCmdGroup",
@@ -3923,6 +4218,55 @@
         {
           "id": "add_devices",
           "template": "add_devices"
+        }
+      ]
+    },
+    {
+      "id": "RM4_mini_cloud",
+      "name": {
+        "en": "RM4 Mini (Cloud)",
+        "nl": "RM4 Mini (Cloud)"
+      },
+      "images": {
+        "small": "/drivers/RM4_mini_cloud/assets/images/small.jpg",
+        "large": "/drivers/RM4_mini_cloud/assets/images/large.jpg"
+      },
+      "class": "other",
+      "platforms": [
+        "local"
+      ],
+      "connectivity": [
+        "cloud"
+      ],
+      "capabilities": [
+        "rmmax_status",
+        "button.refresh",
+        "button.check_connection"
+      ],
+      "capabilitiesOptions": {
+        "button.refresh": {
+          "title": {
+            "en": "Refresh saved commands",
+            "nl": "Opgeslagen commando's vernieuwen"
+          },
+          "icon": "/assets/rm-cloud/refresh.svg"
+        },
+        "button.check_connection": {
+          "title": {
+            "en": "Check cloud connection",
+            "nl": "Cloudverbinding controleren"
+          },
+          "icon": "/drivers/RM_max/assets/connection.svg"
+        }
+      },
+      "pair": [
+        {
+          "id": "cloud"
+        }
+      ],
+      "repair": [
+        {
+          "id": "cloud"
         }
       ]
     },
@@ -4463,6 +4807,55 @@
         {
           "id": "add_devices",
           "template": "add_devices"
+        }
+      ]
+    },
+    {
+      "id": "RM4_pro_cloud",
+      "name": {
+        "en": "RM4 Pro (Cloud)",
+        "nl": "RM4 Pro (Cloud)"
+      },
+      "images": {
+        "small": "/drivers/RM4_pro_cloud/assets/images/small.jpg",
+        "large": "/drivers/RM4_pro_cloud/assets/images/large.jpg"
+      },
+      "class": "other",
+      "platforms": [
+        "local"
+      ],
+      "connectivity": [
+        "cloud"
+      ],
+      "capabilities": [
+        "rmmax_status",
+        "button.refresh",
+        "button.check_connection"
+      ],
+      "capabilitiesOptions": {
+        "button.refresh": {
+          "title": {
+            "en": "Refresh saved commands",
+            "nl": "Opgeslagen commando's vernieuwen"
+          },
+          "icon": "/assets/rm-cloud/refresh.svg"
+        },
+        "button.check_connection": {
+          "title": {
+            "en": "Check cloud connection",
+            "nl": "Cloudverbinding controleren"
+          },
+          "icon": "/drivers/RM_max/assets/connection.svg"
+        }
+      },
+      "pair": [
+        {
+          "id": "cloud"
+        }
+      ],
+      "repair": [
+        {
+          "id": "cloud"
         }
       ]
     },
@@ -6473,6 +6866,18 @@
       "setable": true,
       "uiComponent": "toggle",
       "insights": false
+    },
+    "rmcloud_button": {
+      "type": "boolean",
+      "title": {
+        "en": "Command",
+        "nl": "Commando"
+      },
+      "getable": false,
+      "setable": true,
+      "insights": false,
+      "uiComponent": "button",
+      "icon": "/assets/rm-cloud/command.svg"
     },
     "rmmax_pause": {
       "type": "boolean",
