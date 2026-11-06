@@ -1,7 +1,30 @@
 # RM Max cloud control and local-credential test
 
-This is an experimental separate `RM_max` driver. Cloud and real-device behavior
-still require a tester; mocked protocol and lifecycle tests are not hardware proof.
+This separate `RM_max` driver controls functions advertised by the selected cloud
+service. A user has tested Magic Home cloud control on an RM Max; the evidence
+and remaining limits are recorded below. The BroadLink EU and optional local
+credential paths still need hardware confirmation. Mocked protocol and lifecycle
+tests are not hardware proof.
+
+## Reported hardware verification (v3.1.83)
+
+A report supplied on 6 November 2026 confirms working controls through Magic Home
+on Homey Pro (Early 2023), Homey v13.5.3. The user reports that normal operation
+continues after the queue-full warning during rapid button presses, without an
+app restart. The previously reported Magic Home learning and button-exposure
+limitations remain.
+
+The supplied diagnostic covers approximately 79 minutes on 5 November. Both
+paired entries refresh regularly, importing 13 and 2 commands respectively.
+There are 32 successful refreshes and one ten-second timeout. The next check,
+scheduled one minute after that failure, succeeds. The excerpt contains only
+automatic refreshes, so button operation and the queue-full warning are confirmed
+by the user's statement, not by command or queue events in this log.
+
+This evidence supports release of the currently supported Magic Home cloud
+functions. It does not establish direct Homey learning, access to all ten KaKu
+buttons, BroadLink EU control, local UDP control or support for every RM Max
+firmware/account combination.
 
 ## Supported paths
 
@@ -39,6 +62,31 @@ still require a tester; mocked protocol and lifecycle tests are not hardware pro
   This raw-code path applies to BroadLink EU only. Magic Home's `aeskeyToken` is
   opaque authorization material, not a demonstrated AES key. Its intents contain
   no raw codes, so local transport and unlock are not enabled for Magic Home.
+
+### Learning and custom-panel research (6 November 2026)
+
+The official Magic Home integration's published transport and action map provide
+authorization, discovery, control and state queries. No verified start-learning,
+capture/readback and save-button sequence was found for this authorization route
+in that implementation or the published DNA proxy message reference. The generic
+`DNA.FreeControl` interface requires product-specific DNA instructions; it is not
+itself a documented RM Max learning sequence. Learning in Homey remains
+unavailable for this path.
+
+The current `broadlink-async` library offers LAN capture after authentication.
+Its changelog still describes RM Max support as reported rather than confirmed
+because authentication was rejected in the upstream tests. Its 1.2.1 fix concerns
+off-time padding of IR packets generated from pulses; it does not add Magic Home
+cloud learning or provide a demonstrated authentication fix for this device.
+
+There is a concrete vendor-side lead for the missing KaKu buttons: the DNA message
+reference says returning custom remote panels requires operations-side
+configuration. `DNA.CustomizedRemoteControl` then advertises the panel's named
+buttons during discovery, which this Homey driver already supports. BroadLink
+must confirm whether it can enable that export for the Magic Home integration;
+the documentation does not prove it is enabled or available for this account.
+Ask BroadLink about custom-panel export and a supported learning/readback/storage
+API.
 
 Cloud operation requires Internet access. No failed physical send is retried or
 automatically sent through another transport. Acknowledgment does not measure
@@ -129,6 +177,10 @@ Busy automatic checks are deferred. Up to three user operations can wait behind
 an active command, manual operation or automatic check, in arrival order. Each
 waiting operation has a five-second deadline and its own timeout. A full queue
 or expired wait returns an explicit error without starting that operation.
+The limit allows one active operation plus three waiting operations. A further
+press is rejected rather than added to the queue; it will not be sent later.
+The queue-full warning during a rapid burst is therefore expected. Allow pending
+operations to finish before pressing again.
 Deadlines are checked again before starting, including when a timeout callback
 is delayed. Failed requests release the queue; failed physical sends are not
 retried. Shutdown and reinitialization cancel all waiting operations and their
@@ -198,6 +250,12 @@ outage. New physical sends are never retried or switched to another transport.
 - [BroadLink's official Magic Home integration](https://github.com/ibroadlink/ha_magic_home):
   authorization, refresh and discovery/control envelopes. Only demonstrated
   interfaces are implemented; its capability API is not presented as raw learning.
+- [Official Magic Home transport](https://github.com/ibroadlink/ha_magic_home/blob/main/custom_components/ha_magic_home/iot/common.py)
+  and [API/action map](https://github.com/ibroadlink/ha_magic_home/blob/main/custom_components/ha_magic_home/iot/const.py):
+  sources checked for a supported learning sequence on 6 November 2026.
+- [broadlink-async changelog](https://github.com/DAB-LABS/broadlink-async/blob/master/CHANGELOG.md):
+  the 1.2.1 generated-IR packet fix and the remaining qualification on RM Max
+  authentication support, checked on 6 November 2026.
 - [broadlink-async device protocol](https://github.com/DAB-LABS/broadlink-async/blob/master/broadlink_async/device.py):
   firmware query and encrypted UDP framing. The local test requires strict peer,
   packet counter, MAC and checksum validation and fails closed otherwise.
@@ -205,7 +263,7 @@ outage. New physical sends are never retried or switched to another transport.
 No production dependencies, app version changes, commits, publishing or device
 installation are part of this implementation.
 
-## Changelog (unreleased)
+## Changelog (v3.1.83)
 
 Improved RM Max handling of overlapping controls with a three-operation queue, a five-second waiting limit, cancellation of expired or stopped work, and operation timing diagnostics.
 
