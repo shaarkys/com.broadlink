@@ -44,6 +44,58 @@ test('suggestions use unambiguous machine functions and never user-facing names'
   assert.deepEqual(commands.suggestMappings(duplicateFunctions), {});
 });
 
+test('toggle suggestions require explicit machine functions and preserve discrete power meanings', () => {
+  for (const fn of ['power_toggle', 'toggle-power', 'POWER']) {
+    const result = normalize([row('Unrelated name', fn), row('Power toggle'), row('Power button (toggle)')]);
+    assert.deepEqual(commands.suggestMappings(result.commands), { power_toggle: result.commands[0].id });
+  }
+  const result = normalize([row('Toggle label', 'on'), row('Another toggle label', 'off'), row('Power', 'powercycle')]);
+  assert.deepEqual(commands.suggestMappings(result.commands), { power_on: result.commands[0].id, power_off: result.commands[1].id });
+  const ambiguous = normalize([row('A', 'power_toggle'), row('B', 'toggle_power')]);
+  assert.deepEqual(commands.suggestMappings(ambiguous.commands), {});
+});
+
+test('single on and off mappings each expose standard onoff without automatic named buttons', () => {
+  const [on, off] = normalize([row('On', 'power_on'), row('Off', 'power_off')]).commands;
+  for (const [role, command] of [['power_on', on], ['power_off', off]]) {
+    const prefs = commands.preferences([on, off], { mappings: { [role]: command.id }, buttons: [] });
+    const ids = commands.capabilityIds(prefs);
+    assert(!ids.includes(commands.buttonCapability(command.id)));
+    assert(ids.includes('onoff'));
+    assert.equal(ids.filter(id => id.startsWith('rmcloud_button.')).length, 0);
+    // A refresh that loses a mapped command must keep the control available for review.
+    assert.deepEqual(commands.capabilityIds(commands.preferences([], prefs, prefs)), ids);
+  }
+});
+
+test('toggle power uses standard onoff and preserves an explicitly selected additional button identity', () => {
+  const [toggle] = normalize([row('TV power', 'power_toggle')]).commands;
+  const prefs = commands.preferences([toggle], { mappings: { power_toggle: toggle.id }, buttons: [toggle.id] });
+  const ids = commands.capabilityIds(prefs);
+  assert(ids.includes('onoff'));
+  assert.deepEqual(commands.capabilityIds({ mappings: prefs.mappings, buttons: [] }), ['rmmax_status', 'button.refresh', 'button.check_connection', 'onoff']);
+  assert.equal(ids.filter(id => id === commands.buttonCapability(toggle.id)).length, 1);
+  assert.deepEqual(commands.preview({ commands: [toggle] }, prefs).roles.find(role => role.id === 'power_toggle').title,
+    { en: 'Power button (toggle)', nl: 'Aan/uitknop (wisselen)' });
+  for (const role of ['power_on', 'power_off']) {
+    assert.throws(() => commands.preferences([toggle], { mappings: { power_toggle: toggle.id, [role]: toggle.id }, buttons: [] }), /different command/);
+  }
+});
+
+test('distinct on and off retain the existing state switch alongside an optional separate toggle', () => {
+  const all = normalize([row('On', 'power_on'), row('Off', 'power_off'), row('Toggle', 'power_toggle')]).commands;
+  const [on, off, toggle] = all;
+  const prefs = commands.preferences(all, { mappings: { power_on: on.id, power_off: off.id }, buttons: [] });
+  const ids = commands.capabilityIds(prefs);
+  assert(ids.includes('onoff'));
+  assert(!ids.some(id => id.startsWith('rmcloud_button.')));
+  const extra = commands.capabilityIds({ mappings: { ...prefs.mappings, power_toggle: toggle.id }, buttons: [on.id, toggle.id] });
+  assert(extra.includes('onoff'));
+  assert(extra.includes(commands.buttonCapability(on.id)));
+  assert(extra.includes(commands.buttonCapability(toggle.id)));
+  assert.equal(extra.filter(id => id.startsWith('rmcloud_button.')).length, 2);
+});
+
 test('saved missing selections survive refresh until explicitly cleared; new unknown selections fail', () => {
   const [on, off] = normalize([row('On', 'power_on'), row('Off', 'power_off')]).commands;
   const previous = { mappings: { power_on: on.id }, buttons: [off.id] };
@@ -81,7 +133,7 @@ test('preview exposes selection metadata only, while controls contain only expli
   const result = normalize([row('Play', 'play'), row('Power', 'power_on')]);
   const prefs = { mappings: { play: result.commands[0].id, power_on: result.commands[1].id }, buttons: [result.commands[1].id] };
   const ids = commands.capabilityIds(prefs);
-  assert(ids.includes('rmmax_play')); assert(!ids.includes('onoff')); assert(!ids.includes('volume_up'));
+  assert(ids.includes('rmmax_play')); assert(ids.includes('onoff')); assert(!ids.includes('volume_up'));
   assert(ids.includes(commands.buttonCapability(prefs.buttons[0])));
   const preview = commands.preview(result, prefs);
   assert.deepEqual(preview.commands, result.commands.map(({ id, name }) => ({ id, name })));

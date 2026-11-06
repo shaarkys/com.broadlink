@@ -57,28 +57,35 @@ test('validates real-shaped IR and independent synthetic RF without converting b
   assert.equal(validateCode('rm4_pro', '26'.repeat(65532)), false);
 });
 
-test('command framing preserves classic Mini and length-prefixes Red Bean/RM4', () => {
+test('SDK passthrough uses the command word without the LAN length field for every RM model', () => {
   const raw = '2600040011223344';
-  assert.equal(encodeCommand({ devtype: 0x2737 }, raw).toString('hex'), '020000002600040011223344');
-  for (const devtype of [0x5f36, 0x51da, 0x520b]) assert.equal(encodeCommand({ devtype }, raw).toString('hex'), '0c00020000002600040011223344');
-  assert.equal(encodeCommand({ devtype: 0x520b }, RF4).toString('hex'), '100002000000b1c00800009f06000b210d21');
+  // Vendor SDK bl_protocol_proc forwards this API input to HTTP unchanged.
+  // Its local bl_tfb_data_pack path alone inserts 0c00 ahead of this fixture.
+  for (const devtype of [0x2737, 0x5f36, 0x51da, 0x520c, 0x520b, 0x5213]) {
+    assert.equal(encodeCommand({ devtype }, raw).toString('hex'), '020000002600040011223344');
+  }
+  assert.equal(encodeCommand({ devtype: 0x5213 }, RF4).toString('hex'), '02000000b1c00800009f06000b210d21');
   assert.throws(() => encodeCommand({ devtype: 0xaf8b }, raw), /hub identity/);
   assert.throws(() => encodeCommand({ devtype: 0x51da }, RF), /Invalid saved RM code/);
 });
 
-test('EU sendRMCode binds the endpoint, model-correct bytes and canonical credentials', async () => {
+test('EU sendRMCode binds the endpoint, SDK-format IR/RF bytes and canonical credentials', async () => {
   let count = 0;
-  for (const [type, packet, prefix] of [[0x2737, IR, '02000000'], [0x5f36, '2600040011223344', '0c0002000000'], [0x51da, '2600040011223344', '0c0002000000'], [0x520b, RF4, '100002000000']]) {
+  for (const [type, packet] of [[0x2737, IR], [0x5f36, '2600040011223344'], [0x51da, '2600040011223344'], [0x520c, IR], [0x520b, RF4], [0x5213, IR], [0x5213, RF4]]) {
     const endpoint = hub(type);
     if (type === 0x5f36) endpoint.cookie = { device: { id: cookie.terminalid, key } };
     const cloud = new BroadlinkCloud(session, { request: async (url, req) => {
       count++;
       assert.match(url, /^https:\/\/app-service-deu-6dc239d5\.ibroadlink\.com\/device\/control\/v2\/sdkcontrol\?license=/);
+      const license = new URL(url).searchParams.get('license');
+      assert.match(license, /^[A-Za-z0-9+/]+={0,2}$/);
+      assert(license.includes('+'), 'SDK license must remain intact after URL query decoding');
+      assert.equal(Buffer.from(license, 'base64').toString('base64'), license);
       assert.equal(req.timeoutMs, 10000);
       assert.equal(req.headers.familyid, 'home');
       const d = JSON.parse(req.body).directive;
       assert.equal(d.header.name, 'commonControl');
-      assert.equal(d.payload.data, Buffer.from(prefix + packet, 'hex').toString('base64'));
+      assert.equal(d.payload.data, Buffer.from('02000000' + packet, 'hex').toString('base64'));
       assert.equal(d.payload.notpadding, 0);
       assert.equal(d.endpoint.endpointId, 'hub');
       assert.deepEqual(JSON.parse(Buffer.from(d.endpoint.devicePairedInfo.cookie, 'base64')), { device: { id: 0x12345678, key, aeskey: key, did: 'hub', pid: pid(type), mac: endpoint.mac } });
@@ -86,7 +93,7 @@ test('EU sendRMCode binds the endpoint, model-correct bytes and canonical creden
     } });
     await cloud.sendRMCode(endpoint, packet);
   }
-  assert.equal(count, 4);
+  assert.equal(count, 7);
 });
 
 test('invalid inputs never reach the cloud transport', async () => {
@@ -96,7 +103,35 @@ test('invalid inputs never reach the cloud transport', async () => {
   assert.equal(count, 0);
 });
 
-test('only the known EU ack is accepted; reply binding and rejects cause no retry', async () => {
+test('short and padded send-command acknowledgements succeed with one request', async () => {
+  for (const type of [0x2737, 0x5f36, 0x520c, 0x5213]) for (const data of ['AgAAAA==', 'AgAAAAAAAAAAAAAAAAAAAA==']) {
+    let sends = 0;
+    const cloud = new BroadlinkCloud(session, { request: async (url, req) => {
+      sends++;
+      const response = ack(JSON.parse(req.body).directive);
+      response.event.payload = { status: 0, data };
+      return response;
+    } });
+    await cloud.sendRMCode(hub(type), IR);
+    assert.equal(sends, 1);
+  }
+});
+
+test('arbitrary short replies, altered command words and malformed padding never count as success', async () => {
+  for (const data of ['', 'AgAAAA', 'AgAAAA==\n', 'AAAAAA==', 'AQAAAA==', 'AwAAAA==', 'AgAAAAE=', 'AgAAAQ==', 'AgAA', 'AgAAAAAAAAA=', 'AgAAAAAAAAAAAAAAAAAAAQ==']) {
+    let sends = 0;
+    const cloud = new BroadlinkCloud(session, { request: async (url, req) => {
+      sends++;
+      const response = ack(JSON.parse(req.body).directive);
+      response.event.payload.data = data;
+      return response;
+    } });
+    await assert.rejects(cloud.sendRMCode(hub(0x520c), IR), error => error.code === 'RM_CLOUD_RESPONSE' && error.reason === 'ack_unrecognized');
+    assert.equal(sends, 1);
+  }
+});
+
+test('short and padded acknowledgements still require matching replies and successful statuses, without retries', async () => {
   const mutations = [
     response => { response.event.header.messageId = 'unrelated'; },
     response => { response.event.endpoint.endpointId = 'other'; },
@@ -110,11 +145,105 @@ test('only the known EU ack is accepted; reply binding and rejects cause no retr
     response => { response.status = -1; },
     response => { response.status = -1012; },
   ];
-  for (const mutate of mutations) {
+  for (const data of ['AgAAAA==', 'AgAAAAAAAAAAAAAAAAAAAA==']) for (const mutate of mutations) {
     let count = 0;
-    const cloud = new BroadlinkCloud(session, { request: async (url, req) => { count++; const response = ack(JSON.parse(req.body).directive); mutate(response); return response; } });
+    const cloud = new BroadlinkCloud(session, { request: async (url, req) => { count++; const response = ack(JSON.parse(req.body).directive); response.event.payload.data = data; mutate(response); return response; } });
     await assert.rejects(cloud.sendRMCode(hub(0x520b), RF));
     assert.equal(count, 1);
+  }
+});
+
+test('RM send response diagnostics identify validation failures without retaining response data', async () => {
+  const cases = [
+    ['response_shape', () => null],
+    ['response_shape', response => { response.event.header = null; }],
+    ['header_namespace', response => { response.event.header.namespace = 'private namespace'; }],
+    ['header_name', response => { response.event.header.name = 'private name'; }],
+    ['header_version', response => { response.event.header.interfaceVersion = 'private version'; }],
+    ['message_binding', response => { response.event.header.messageId = 'private message ID'; }],
+    ['endpoint_binding', response => { response.event.endpoint.endpointId = 'private endpoint'; }],
+    ['payload_shape', response => { response.event.payload = null; }],
+    ['payload_rejected', response => { response.event.payload.status = -5; }],
+    ['error_response', response => { response.event.header.name = 'ErrorResponse'; response.event.payload.status = -3; }],
+    ['cloud_rejected', response => { response.status = -49008; }],
+    ['ack_unrecognized', response => { response.event.payload.data = Buffer.from('private code echo').toString('base64'); }],
+  ];
+  for (const [reason, mutate] of cases) {
+    let sends = 0;
+    const cloud = new BroadlinkCloud(session, { request: async (url, req) => {
+      sends++;
+      const response = ack(JSON.parse(req.body).directive);
+      response.msg = 'private top-level message';
+      response.event.payload.message = 'private payload message';
+      response.event.payload.cookie = 'private cookie';
+      const result = mutate(response);
+      return result === null ? null : response;
+    } });
+    await assert.rejects(cloud.sendRMCode(hub(0x51da), IR), error => {
+      assert.equal(error.code, 'RM_CLOUD_RESPONSE');
+      assert.equal(error.reason, reason);
+      assert.equal(error.message, 'RM cloud command response rejected');
+      assert(!JSON.stringify(error).includes('private'));
+      assert(!error.stack.includes('private'));
+      assert(Object.keys(error).every(key => ['code', 'reason', 'remoteStatus', 'deviceStatus', 'ackBytes'].includes(key)));
+      if (reason === 'payload_rejected') assert.equal(error.deviceStatus, -5);
+      if (reason === 'error_response') assert.equal(error.deviceStatus, -3);
+      if (reason === 'cloud_rejected') assert.equal(error.remoteStatus, -49008);
+      if (reason === 'ack_unrecognized') assert.equal(error.ackBytes, Buffer.byteLength('private code echo'));
+      return true;
+    });
+    assert.equal(sends, 1);
+  }
+});
+
+test('RM response diagnostic statuses and byte counts are bounded and do not imply authentication expiry', async () => {
+  for (const [status, expected] of [[-1012, -1012], [0, 0], [-2147483648, -2147483648], [2147483647, 2147483647], [-2147483649, undefined], [2147483648, undefined], [1.5, undefined], ['-1012', undefined], [{ secret: 'private status' }, undefined]]) {
+    let sends = 0;
+    const cloud = new BroadlinkCloud(session, { request: async (url, req) => {
+      sends++;
+      const response = ack(JSON.parse(req.body).directive);
+      response.status = 0;
+      response.event.header.name = 'ErrorResponse';
+      response.event.payload = { status, data: 'not base64 private echo' };
+      return response;
+    } });
+    await assert.rejects(cloud.sendRMCode(hub(0x51da), IR), error => {
+      assert.equal(error.code, 'RM_CLOUD_RESPONSE');
+      assert.equal(error.reason, 'error_response');
+      assert.equal(error.remoteStatus, 0);
+      assert.equal(error.deviceStatus, expected);
+      assert.equal(error.ackBytes, undefined);
+      assert(!JSON.stringify(error).includes('private'));
+      return true;
+    });
+    assert.equal(sends, 1);
+  }
+  for (const data of [null, {}, 'A===', 'AR==', 'A'.repeat(131076)]) {
+    const cloud = new BroadlinkCloud(session, { request: async (url, req) => {
+      const response = ack(JSON.parse(req.body).directive);
+      response.event.payload.data = data;
+      return response;
+    } });
+    await assert.rejects(cloud.sendRMCode(hub(0x51da), IR), error => error.code === 'RM_CLOUD_RESPONSE' && error.reason === 'ack_unrecognized' && error.ackBytes === undefined);
+  }
+});
+
+test('documented command ErrorResponse types preserve auth, offline and missing recovery classifications', async () => {
+  for (const [type, code] of [['INVALID_ACCESSTOKEN', 'AUTH_REQUIRED'], ['ENDPOINT_UNREACHABLE', 'ENDPOINT_OFFLINE'], ['NO_SUCH_ENDPOINT', 'ENDPOINT_MISSING'], ['INVALID_SIGNATURE', 'RM_CLOUD_RESPONSE'], ['FUNCTION_NOT_SUPPORT', 'RM_CLOUD_RESPONSE'], ['private arbitrary type', 'RM_CLOUD_RESPONSE']]) {
+    let sends = 0;
+    const cloud = new BroadlinkCloud(session, { request: async (url, req) => {
+      sends++; const response = ack(JSON.parse(req.body).directive);
+      response.event.header.name = 'ErrorResponse';
+      response.event.payload = { type, status: -3, message: 'private code and token' };
+      return response;
+    } });
+    await assert.rejects(cloud.sendRMCode(hub(0x51da), IR), error => {
+      assert.equal(error.code, code); assert.equal(error.reason, 'error_response');
+      assert.equal(error.errorType, type.startsWith('private') ? undefined : type);
+      assert(!JSON.stringify(error).includes('private')); assert(!error.message.includes('private'));
+      return true;
+    });
+    assert.equal(sends, 1);
   }
 });
 

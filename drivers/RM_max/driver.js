@@ -6,10 +6,13 @@ const { BroadlinkCloud, MagicHomeCloud, extractCredentials, isRMMaxEndpoint } = 
 const { clientFor, credentialFingerprint, deviceId, inventorySummary, magicEndpointDiagnostics, collectCommands, safeError, clone } = require("../../lib/RMMaxCommands");
 const local = require("../../lib/RMMaxLocal");
 const { magicProfile, capabilityIds } = require("../../lib/RMMaxMagic");
+const { EmailCodeLogin } = require("../../lib/EmailCodeLogin");
+const { getLoginPreferences, rememberLoginPreferences } = require("../../lib/CloudLoginPreferences");
 
 class RMMaxDriver extends Homey.Driver {
   async onInit() {
     this._pending = new Map();
+    this._stopped = false;
     this.homey.flow.getActionCard("send_command_rm_max")
       .registerRunListener(args => args.device.executeCommand(args))
       .getArgument("variable").registerAutocompleteListener((query, args) => args.device.onAutoComplete(query));
@@ -39,42 +42,86 @@ class RMMaxDriver extends Homey.Driver {
     let endpoints = [];
     let preview;
     let lastLogin = 0;
-    const expires = Date.now() + 10 * 60 * 1000;
+    let emailLogin = new EmailCodeLogin();
+    let expires = Date.now() + 10 * 60 * 1000;
+    const pairingId = crypto.randomBytes(4).toString("hex");
+    const pairingLog = (event, outcome, started = Date.now(), detail = "") =>
+      this.log(`RM Max pairing ${pairingId}: ${event} ${outcome}; durationMs=${Math.max(0, Date.now() - started)}${detail ? "; " + detail : ""}`);
+    const pairingError = (code, message) => Object.assign(new Error(message), { code });
     const assertActive = () => {
-      if (!active || Date.now() >= expires) throw new Error("Pairing session expired. Start again.");
+      if (!active || this._stopped) throw pairingError("PAIRING_CLOSED", "Pairing session expired or closed. Reopen pairing or Repair.");
+      if (Date.now() >= expires) throw pairingError("PAIRING_EXPIRED", "Pairing session expired. Request a new verification code or sign in again.");
     };
+    pairingLog(repairDevice ? "repair" : "pair", "opened");
     const handle = (event, action) => session.setHandler(event, async (input = {}) => {
-      assertActive();
-      if (busy) throw new Error("Another request is still running.");
-      busy = true;
-      try { const result = await action(input); assertActive(); return result; }
-      finally { busy = false; }
+      const started = Date.now(); let ownsRequest = false;
+      pairingLog(event, "started");
+      try {
+        if (!active || this._stopped) assertActive();
+        if (busy) throw pairingError("PAIRING_BUSY", "Another pairing request is still running. Wait a moment and try again.");
+        const freshAuthorization = event === "cloud_request_code" || (event === "cloud_login" && (input.method === undefined || input.method === "password"));
+        if (Date.now() >= expires && freshAuthorization) {
+          emailLogin.close(); emailLogin = new EmailCodeLogin();
+          client = undefined; homes = []; endpoints = []; preview = undefined;
+          expires = Date.now() + 10 * 60 * 1000;
+          pairingLog("session", "renewed after expiry");
+        }
+        assertActive(); busy = true; ownsRequest = true;
+        const result = await action(input); assertActive();
+        pairingLog(event, "succeeded", started); return result;
+      } catch (error) {
+        pairingLog(event, "failed", started, safeError(error)); throw error;
+      } finally { if (ownsRequest) busy = false; }
     });
     const network = async action => {
       try { return await action(); }
-      catch (error) { const message = safeError(error); this.log(`RM Max cloud request: ${message}`); throw new Error(message); }
+      catch (error) { const message = safeError(error); pairingLog("cloud request", "failed", Date.now(), message); throw new Error(message); }
     };
     const hubFor = id => {
       const hub = endpoints.find(endpoint => endpoint.endpointId === id && isRMMaxEndpoint(endpoint));
       if (!hub) throw new Error("Discover and select an identified RM Max first.");
       return hub;
     };
-    session.setHandler("disconnect", () => { active = false; client = undefined; endpoints = []; preview = undefined; homes = []; });
-    handle("cloud_context", async () => ({ repair: !!repairDevice }));
+    session.setHandler("disconnect", () => { pairingLog("session", "disconnected"); active = false; emailLogin.close(); client = undefined; endpoints = []; preview = undefined; homes = []; });
+    const rememberLogin = (email, method, accountId) => {
+      try { rememberLoginPreferences(this.homey, email, method, accountId); }
+      catch (_) { pairingLog("login preferences", "could not be saved"); }
+    };
+    handle("cloud_context", async () => {
+      const old = repairDevice?.getStoreValue("rmmax_cloud");
+      let login = null;
+      try { login = getLoginPreferences(this.homey, old?.session); }
+      catch (_) { pairingLog("login preferences", "could not be loaded"); }
+      return { repair: !!repairDevice, provider: old?.session?.provider, login };
+    });
+    handle("cloud_request_code", async input => {
+      client = undefined; endpoints = []; preview = undefined; homes = [];
+      if (input.provider !== "broadlink_eu") throw new Error("Email codes require BroadLink EU.");
+      const result = await network(() => emailLogin.request(input.email, email => BroadlinkCloud.requestEmailCode(email)));
+      assertActive(); this.log("RM Max email verification code requested");
+      rememberLogin(input.email, "email_code");
+      return result;
+    });
     handle("cloud_login", async input => {
       if (Date.now() - lastLogin < 5000) throw new Error("Wait a few seconds before signing in again.");
       lastLogin = Date.now();
       client = undefined; endpoints = []; preview = undefined; homes = [];
       let nextClient;
       if (input.provider === "broadlink_eu") {
-        const account = await network(() => BroadlinkCloud.login(input.email, input.password));
+        if (input.method !== undefined && !["password", "email_code"].includes(input.method)) throw new Error("Choose password or email verification code.");
+        const account = await network(() => input.method === "email_code"
+          ? emailLogin.login(input.email, input.code, (email, code) => BroadlinkCloud.loginWithEmailCode(email, code))
+          : BroadlinkCloud.login(input.email, input.password));
+        assertActive();
         nextClient = new BroadlinkCloud(account);
         homes = await network(() => nextClient.listHomes());
       } else if (input.provider === "magic_home") {
+        if (input.method === "email_code") throw new Error("Email codes require BroadLink EU.");
         const account = await network(() => MagicHomeCloud.authorize(input.authCode, input.region));
         nextClient = new MagicHomeCloud(account);
       } else throw new Error("Choose BroadLink EU or Magic Home.");
       assertActive(); client = nextClient;
+      if (input.provider === "broadlink_eu") rememberLogin(input.email, input.method || "password", client.getSession().userId);
       return { provider: client.getSession().provider, homes };
     });
     handle("cloud_discover", async input => {
@@ -135,7 +182,7 @@ class RMMaxDriver extends Homey.Driver {
             ["did", "moduleid"].some(key => old.hub.cookie?.[key] && old.hub.cookie[key] !== hub.cookie?.[key])))) {
           throw new Error("Repair must use the original account, home and RM Max.");
         }
-        await repairDevice.replaceCloudConfiguration(bundle);
+        await repairDevice.replaceCloudConfiguration(bundle, assertActive);
         return { repair: true };
       }
       if (this.getDevices().some(device => device.getData().id === id)) throw new Error("This RM Max is already paired. Use Repair on the existing device.");
@@ -150,6 +197,7 @@ class RMMaxDriver extends Homey.Driver {
   }
 
   onUninit() {
+    this._stopped = true;
     for (const entry of this._pending.values()) this.homey.clearTimeout(entry.timer);
     this._pending.clear();
   }

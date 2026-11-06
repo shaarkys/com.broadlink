@@ -19,8 +19,10 @@ const copy = x => JSON.parse(JSON.stringify(x));
 class EU {
   constructor(session) { this.session = copy(session); }
   static async login() { return scenario.login ? scenario.login() : copy(account); }
+  static async requestEmailCode(email) { (scenario.codeEmails ||= []).push(email); if (scenario.codeSend) await scenario.codeSend(); }
+  static async loginWithEmailCode(email, code) { (scenario.codeLogins ||= []).push({ email, code }); return scenario.codeLogin ? scenario.codeLogin() : copy(account); }
   getSession() { return copy(this.session); }
-  async listHomes() { return copy(scenario.homes || [{ id: 'home1', name: 'Home' }]); }
+  async listHomes() { scenario.homesReads = (scenario.homesReads || 0) + 1; return copy(scenario.homes || [{ id: 'home1', name: 'Home' }]); }
   async listDevices() { return scenario.listDevices ? scenario.listDevices() : copy(scenario.endpoints || [hub, remote]); }
   async getRemote() { if (scenario.remoteError) throw Error('sensitive failure'); return { irData: Array.from({ length: 10 }, (_, i) => ({ name: `RF${i}`, codeList: [{ code: 'aabb' + i.toString(16).padStart(2, '0') }] })) }; }
   async sendCode() { scenario.cloudSends++; if (scenario.sendError) throw Error('sensitive failure'); }
@@ -60,10 +62,11 @@ try {
 function reset() { scenario = { cloudSends: 0, localSends: 0, probes: 0 }; }
 function makeDriver() {
   const trigger = { calls: [], async trigger(...args) { this.calls.push(args); } };
-  const d = new Driver(); d.log = () => {}; d.getDevices = () => [];
+  const logs = []; const d = new Driver(); d.log = message => logs.push(message); d.getDevices = () => [];
+  const savedSettings = new Map();
   const timers = new Map(); let nextTimer = 0;
-  d.homey = { setTimeout: (fn, ms) => { timers.set(++nextTimer, { fn, ms }); return nextTimer; }, clearTimeout: id => timers.delete(id), flow: { getActionCard: () => ({ registerRunListener() { return this; }, getArgument() { return { registerAutocompleteListener() {} }; } }), getDeviceTriggerCard: () => trigger } };
-  return { driver: d, trigger, timers };
+  d.homey = { settings: { get: key => savedSettings.get(key), set: (key, value) => savedSettings.set(key, copy(value)) }, setTimeout: (fn, ms) => { timers.set(++nextTimer, { fn, ms }); return nextTimer; }, clearTimeout: id => timers.delete(id), flow: { getActionCard: () => ({ registerRunListener() { return this; }, getArgument() { return { registerAutocompleteListener() {} }; } }), getDeviceTriggerCard: () => trigger } };
+  return { driver: d, trigger, timers, logs };
 }
 async function pair(driver, provider = 'broadlink_eu', repairDevice) {
   const handlers = {}; const socket = { setHandler: (name, fn) => { handlers[name] = fn; } };
@@ -435,4 +438,87 @@ test('bootstrap storage failure can be repaired for the original device identity
   await device.onInit(); assert.equal(unavailable, true); assert.equal(values.rmmax_cloud, undefined);
   failSave = false; const repairing = await pair(driver, 'broadlink_eu', device); await repairing.handlers.cloud_preview({ hubId: 'hub1' });
   assert.deepEqual(await repairing.handlers.cloud_complete({ hubId: 'hub1' }), { repair: true }); assert.equal(values.rmmax_cloud.hub.endpointId, 'hub1'); assert.equal(values.bootstrapToken, undefined);
+});
+
+
+test('RM Max email-code pairing and Repair keep existing EU identity and session storage', async t => {
+  let now = 2100000000000; t.mock.method(Date, 'now', () => now); reset();
+  const x = makeDriver(); await x.driver.onInit(); const h = {};
+  x.driver.onPair({ setHandler(name, fn) { h[name] = fn; } });
+  await h.cloud_request_code({ provider: 'broadlink_eu', email: 'owner@example.org' });
+  await h.cloud_login({ provider: 'broadlink_eu', email: 'owner@example.org', code: '001234', method: 'email_code' });
+  await h.cloud_discover({ homeId: 'home1' }); await h.cloud_preview({ hubId: 'hub1' });
+  const result = await h.cloud_complete({ hubId: 'hub1' });
+  const bundle = x.driver.takePairingBundle(result.device.store.bootstrapToken, result.device.data.id);
+  assert.equal(result.device.data.id, commands.deviceId({ ...account, familyId: 'home1' }, hub));
+  assert.deepEqual(bundle.session, { ...account, familyId: 'home1' }); assert(!JSON.stringify(bundle).includes('001234'));
+  const d = makeDevice(x.driver, bundle); await d.device.onInit();
+  const priorIds = d.device.onAutoComplete().map(c => c.id); now += 60000;
+  scenario.codeLogin = async () => ({ ...account, loginSession: 'renewed-by-code' });
+  const repair = {}; x.driver.onRepair({ setHandler(name, fn) { repair[name] = fn; } }, d.device);
+  await repair.cloud_request_code({ provider: 'broadlink_eu', email: 'owner@example.org' });
+  await repair.cloud_login({ provider: 'broadlink_eu', email: 'owner@example.org', code: '001234', method: 'email_code' });
+  await repair.cloud_discover({ homeId: 'home1' }); await repair.cloud_preview({ hubId: 'hub1' });
+  assert.deepEqual(await repair.cloud_complete({ hubId: 'hub1' }), { repair: true });
+  assert.equal(d.stored().session.loginSession, 'renewed-by-code');
+  assert.deepEqual(d.device.onAutoComplete().map(c => c.id), priorIds);
+  assert.deepEqual(scenario.codeEmails, ['owner@example.org', 'owner@example.org']);
+  assert.equal(scenario.codeLogins.length, 2);
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('RM Max email code requests are EU-only and cancelled sessions cannot authorize', async t => {
+  let now = 2200000000000; t.mock.method(Date, 'now', () => now); reset();
+  const x = makeDriver(); await x.driver.onInit(); const h = {};
+  x.driver.onPair({ setHandler(name, fn) { h[name] = fn; } });
+  await assert.rejects(h.cloud_request_code({ provider: 'magic_home', email: 'owner@example.org' }), /BroadLink EU/);
+  await assert.rejects(h.cloud_login({ provider: 'magic_home', method: 'email_code', authCode: 'private' }), /BroadLink EU/);
+  assert.equal(scenario.codeEmails, undefined);
+  await h.cloud_request_code({ provider: 'broadlink_eu', email: 'owner@example.org' });
+  now += 5000;
+  let release; scenario.codeLogin = () => new Promise(resolve => { release = resolve; });
+  const pending = h.cloud_login({ provider: 'broadlink_eu', email: 'owner@example.org', code: '001234', method: 'email_code' });
+  await h.disconnect();
+  release(copy(account)); await assert.rejects(pending, /expired/);
+  assert.equal(scenario.homesReads || 0, 0);
+  await assert.rejects(h.cloud_login({ provider: 'broadlink_eu', email: 'owner@example.org', code: '001234', method: 'email_code' }), /expired/);
+  x.driver.onUninit();
+});
+
+test('RM Max renews an expired session on a new code request and logs expired attempts safely', async t => {
+  let now = 2400000000000; t.mock.method(Date, 'now', () => now); reset();
+  const x = makeDriver(); await x.driver.onInit(); const p = await pair(x.driver); const h = p.handlers;
+  await h.cloud_preview({ hubId: 'hub1' }); now += 600001;
+  await assert.rejects(h.cloud_complete({ hubId: 'hub1' }), e => e.code === 'PAIRING_EXPIRED');
+  await assert.rejects(h.cloud_login({ provider: 'broadlink_eu', method: 'email_code', email: 'owner@example.org', code: '001234' }), e => e.code === 'PAIRING_EXPIRED');
+  assert.equal(scenario.codeEmails, undefined);
+  await h.cloud_request_code({ provider: 'broadlink_eu', email: 'owner@example.org' });
+  await assert.rejects(h.cloud_complete({ hubId: 'hub1' }));
+  await h.cloud_login({ provider: 'broadlink_eu', method: 'email_code', email: 'owner@example.org', code: '001234' });
+  await h.cloud_discover({ homeId: 'home1' }); await h.cloud_preview({ hubId: 'hub1' });
+  const result = await h.cloud_complete({ hubId: 'hub1' });
+  assert.equal(result.device.data.id, commands.deviceId({ ...account, familyId: 'home1' }, hub));
+  assert(x.logs.some(line => /session renewed after expiry/.test(line)));
+  assert(x.logs.some(line => /cloud_complete failed.*Pairing session expired/.test(line)));
+  assert(x.logs.some(line => /cloud_request_code succeeded; durationMs=/.test(line)));
+  const text = x.logs.join('\n');
+  assert(!text.includes('owner@example.org')); assert(!text.includes('001234')); assert(!text.includes(account.loginSession));
+  await h.disconnect();
+  await assert.rejects(h.cloud_request_code({ provider: 'broadlink_eu', email: 'owner@example.org' }), e => e.code === 'PAIRING_CLOSED');
+  x.driver.onUninit();
+});
+
+test('RM Max preselects remembered EU email-code login for new pairing and original-account Repair', async t => {
+  t.mock.method(Date, 'now', () => 2600000000000); reset();
+  const x = makeDriver(); await x.driver.onInit(); const h = {};
+  x.driver.onPair({ setHandler: (event, handler) => { h[event] = handler; } });
+  await h.cloud_request_code({ provider: 'broadlink_eu', email: 'owner@example.org' });
+  await h.cloud_login({ provider: 'broadlink_eu', method: 'email_code', email: 'owner@example.org', code: '001234' });
+  const repair = {}; x.driver.onRepair({ setHandler: (event, handler) => { repair[event] = handler; } },
+    { getStoreValue: () => ({ session: { ...account } }) });
+  assert.deepEqual((await repair.cloud_context()).login, { email: 'owner@example.org', method: 'email_code' });
+  const another = makeDriver(); another.driver.homey.settings = x.driver.homey.settings; await another.driver.onInit();
+  const next = {}; another.driver.onPair({ setHandler: (event, handler) => { next[event] = handler; } });
+  assert.deepEqual((await next.cloud_context()).login, { email: 'owner@example.org', method: 'email_code' });
+  x.driver.onUninit(); another.driver.onUninit();
 });

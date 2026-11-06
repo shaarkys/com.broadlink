@@ -28,7 +28,8 @@ firmware/account combination.
 
 ## Supported paths
 
-- **BroadLink international app, EU account:** sign in, select a home and an
+- **BroadLink international app, EU account:** sign in with a password or an
+  [email verification code](email-code-sign-in.md), select a home and an
   identified RM Max, preview saved commands, and add the device. Each supported
   single-code IR/RF button becomes a separate autocomplete choice in **Send a
   saved command**. Ten RF buttons can therefore be represented independently if

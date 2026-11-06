@@ -24,7 +24,9 @@ let state;
 function reset(model = 'rm4_pro') { state = { endpoints: [hub(model), copy(remote)], rows: copy(rows), sends: [], reads: 0, inventories: 0 }; }
 class EU extends realCloud.BroadlinkCloud {
   static async login() { return copy(state.account || account); }
-  async listHomes() { return [{ id: 'home1', name: 'Home' }, { id: 'home2', name: 'Other home' }]; }
+  static async requestEmailCode(email) { (state.codeEmails ||= []).push(email); if (state.codeSend) await state.codeSend(); }
+  static async loginWithEmailCode(email, code) { (state.codeLogins ||= []).push({ email, code }); return state.codeLogin ? state.codeLogin() : copy(state.account || account); }
+  async listHomes() { state.homesReads = (state.homesReads || 0) + 1; return [{ id: 'home1', name: 'Home' }, { id: 'home2', name: 'Other home' }]; }
   async listDevices() { state.inventories++; if (state.inventoryError) throw state.inventoryError; return copy(state.endpoints); }
   async getRemote(id) { state.reads++; return { endpointId: id, irData: copy(state.rows) }; }
   async sendRMCode(endpoint, code) { state.sends.push({ endpoint: copy(endpoint), code }); if (state.send) return state.send(); }
@@ -40,8 +42,16 @@ class HomeyDevice {
   getCapabilities() { return [...this.caps]; }
   async addCapability(id) { if (!knownCapability(id)) throw new Error('Invalid Capability: ' + id); this.caps.add(id); }
   async removeCapability(id) { this.caps.delete(id); }
-  getCapabilityOptions(id) { if (!this.hasCapability(id) || !knownCapability(id)) throw new Error('Invalid Capability: ' + id); return this.options[id] || {}; }
-  async setCapabilityOptions(id, options) { this.getCapabilityOptions(id); this.options[id] = copy(options); }
+  getCapabilityOptions(id) {
+    if (!this.hasCapability(id) || !knownCapability(id)) throw new Error('Invalid Capability: ' + id);
+    if (!this.options[id]) throw new Error('Missing Capability Options');
+    return this.options[id];
+  }
+  async setCapabilityOptions(id, options) {
+    assert(this.hasCapability(id) && knownCapability(id));
+    assert.equal(typeof options.title, 'string', 'runtime capability titles must be strings');
+    this.options[id] = copy(options);
+  }
 }
 const originalLoad = Module._load;
 let Device, ThinDrivers;
@@ -58,15 +68,16 @@ try {
 
 function makeDriver(model = 'rm4_pro') {
   const driver = new ThinDrivers[model]();
-  const timers = new Map(), actions = new Map(), triggers = [], triggerIds = [];
+  const timers = new Map(), actions = new Map(), triggers = [], triggerIds = [], logs = [];
+  const savedSettings = new Map();
   let nextTimer = 0;
   const trigger = { async trigger(...args) { triggers.push(args); } };
-  driver.homey = { setTimeout(fn, ms) { timers.set(++nextTimer, { fn, ms }); return nextTimer; }, clearTimeout(id) { timers.delete(id); }, flow: {
+  driver.homey = { settings: { get: key => savedSettings.get(key), set: (key, value) => savedSettings.set(key, copy(value)) }, i18n: { getLanguage: () => 'en' }, setTimeout(fn, ms) { timers.set(++nextTimer, { fn, ms }); return nextTimer; }, clearTimeout(id) { timers.delete(id); }, flow: {
     getActionCard(id) { const card = { registerRunListener(fn) { this.run = fn; return this; }, getArgument(name) { assert.equal(name, 'variable'); return { registerAutocompleteListener(fn) { card.autocomplete = fn; } }; } }; actions.set(id, card); return card; },
     getDeviceTriggerCard(id) { triggerIds.push(id); return trigger; }
   } };
-  driver.getDevices = () => []; driver.log = () => {};
-  return { driver, timers, actions, triggers, triggerIds };
+  driver.getDevices = () => []; driver.log = message => logs.push(message);
+  return { driver, timers, actions, triggers, triggerIds, logs };
 }
 function socket(driver, repairDevice) {
   const handlers = {};
@@ -86,7 +97,10 @@ async function paired(model = 'rm4_pro') {
   reset(model);
   const d = makeDriver(model); await d.driver.onInit();
   const p = await select(d.driver);
-  const result = await p.handlers.cloud_complete({ hubId: 'hub1', remoteId: 'remote1', mappings: p.preview.mappings, buttons: p.preview.buttons });
+  assert.deepEqual(p.preview.buttons, [], 'new pairings start with no named buttons selected');
+  const mapped = new Set(Object.values(p.preview.mappings));
+  const buttons = p.preview.commands.filter(command => !mapped.has(command.id)).slice(0, 2).map(command => command.id);
+  const result = await p.handlers.cloud_complete({ hubId: 'hub1', remoteId: 'remote1', mappings: p.preview.mappings, buttons });
   const bundle = d.driver.takePairingBundle(result.device.store.bootstrapToken, result.device.data.id);
   return { ...d, ...p, result, bundle };
 }
@@ -158,7 +172,7 @@ test('selected native controls and declared custom buttons send exact saved code
   assert.deepEqual(d.device.onAutoComplete(), x.preview.commands);
   await d.listeners.onoff(true); await d.listeners.volume_up();
   const customId = commands.buttonCapability(x.bundle.buttons[0]);
-  assert.equal(d.device.getCapabilityOptions(customId).title.en, 'Favorite');
+  assert.equal(d.device.getCapabilityOptions(customId).title, 'Favorite');
   await d.listeners[customId]();
   assert.equal(state.sends.length, 3);
   assert.deepEqual(state.sends.map(sent => sent.code), [rows[0].codeList[0].code, rows[2].codeList[0].code, rows[3].codeList[0].code]);
@@ -170,6 +184,86 @@ test('selected native controls and declared custom buttons send exact saved code
   await d.device.executeCommand({ variable: { id: flowOnly.id } });
   assert.equal(state.sends.length, 4);
   await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('named button titles use strings, preserve other options and do not rewrite unchanged titles', async () => {
+  const x = await paired(); const d = deviceFor(x);
+  const id = commands.buttonCapability(x.bundle.buttons[0]);
+  d.device.options[id] = { title: { en: 'Old title', nl: 'Oude titel' }, preventTag: true };
+  const original = d.device.setCapabilityOptions.bind(d.device); let writes = 0;
+  d.device.setCapabilityOptions = async (...args) => { writes++; return original(...args); };
+  await d.device.onInit();
+  assert.equal(d.device.unavailable, false);
+  assert.deepEqual(d.device.getCapabilityOptions(id), { title: 'Favorite', preventTag: true });
+  const initialWrites = writes;
+  await d.device._syncCapabilities(); assert.equal(writes, initialWrites);
+  x.driver.homey.i18n.getLanguage = () => 'nl';
+  state.rows = [];
+  await d.device.refreshCommands();
+  assert.equal(d.device.getCapabilityOptions(id).title, 'Favorite (niet beschikbaar)');
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('Repair keeps named selections and recovers a control initialization failure without deleting the device', async () => {
+  const x = await paired(); const d = deviceFor(x); const logs = [];
+  d.device.log = message => logs.push(message);
+  const original = d.device.setCapabilityOptions.bind(d.device);
+  d.device.setCapabilityOptions = async () => { throw new TypeError('private-session Favorite secret@example.org'); };
+  await d.device.onInit();
+  assert.match(d.device.unavailable, /Homey controls/);
+  assert(logs.some(line => /capability title update failed: rmcloud_button\.[a-f0-9]{24}; TypeError/.test(line)));
+  assert(!logs.join('\n').includes('private-session')); assert(!logs.join('\n').includes('Favorite')); assert(!logs.join('\n').includes('secret@example.org'));
+  assert.equal(d.device._pollTimer, undefined);
+  const handlers = socket(x.driver, d.device);
+  assert.equal((await handlers.cloud_context()).configured, true);
+  assert.deepEqual((await handlers.cloud_current()).buttons, x.bundle.buttons);
+  d.device.setCapabilityOptions = original;
+  await handlers.cloud_save_controls({ mappings: x.bundle.mappings, buttons: x.bundle.buttons });
+  assert.equal(d.device.unavailable, false); assert.equal(d.device._controlsInitializationFailed, false);
+  assert.equal(x.timers.get(d.device._pollTimer).ms, 1000);
+  assert.equal(d.device.getData().id, x.result.device.data.id);
+  assert.equal(state.sends.length, 0);
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('editing controls does not override an existing cloud outage or expired authorization', async () => {
+  const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+  d.device._controlsInitializationFailed = true;
+  state.inventoryError = new Error('network failure');
+  await assert.rejects(d.device.refreshCommands());
+  const unavailable = d.device.unavailable;
+  await d.device.updateControls({ mappings: x.bundle.mappings, buttons: x.bundle.buttons });
+  assert.equal(d.device.unavailable, unavailable);
+  d.device._controlsInitializationFailed = true; d.device._authRequired = true;
+  await d.device.updateControls({ mappings: x.bundle.mappings, buttons: x.bundle.buttons });
+  assert.equal(d.device.unavailable, unavailable);
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('stopping during the control recovery status update cannot restore availability or polling', async () => {
+  for (const stop of ['onUninit', 'onDeleted']) {
+    const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+    d.device._controlsInitializationFailed = true;
+    await d.device.setUnavailable('Homey controls could not be initialized');
+    const status = deferred(); const entered = deferred();
+    const write = d.device.setCapabilityValue.bind(d.device);
+    d.device.setCapabilityValue = async (id, value) => {
+      if (id === 'rmmax_status') { entered.resolve(); await status.promise; }
+      return write(id, value);
+    };
+    let availabilityWrites = 0;
+    d.device.setAvailable = async () => { availabilityWrites++; d.device.unavailable = false; };
+    const edit = d.device.updateControls({ mappings: x.bundle.mappings, buttons: x.bundle.buttons });
+    const rejected = assert.rejects(edit, /cancelled/);
+    await entered.promise;
+    const stopping = d.device[stop]();
+    status.resolve(); await rejected; await stopping;
+    assert.equal(availabilityWrites, 0);
+    assert.match(d.device.unavailable, /Homey controls/);
+    assert.equal(d.device._pollTimer, undefined);
+    assert.equal(state.sends.length, 0);
+    x.driver.onUninit();
+  }
 });
 
 test('initialization consumes bootstrap once, persists authorization and restarts from its cache', async () => {
@@ -197,7 +291,7 @@ test('cached controls edit offline, preserve missing IDs, explicitly clear and r
   await d.device.refreshCommands();
   const stored = d.store.get('rm_cloud');
   assert.equal(stored.mappings.play, favorite.id); assert.deepEqual(stored.buttons, [favorite.id]);
-  assert.equal(d.device.getCapabilityOptions(commands.buttonCapability(favorite.id)).title.en, 'Favorite (unavailable)');
+  assert.equal(d.device.getCapabilityOptions(commands.buttonCapability(favorite.id)).title, 'Favorite (unavailable)');
   await assert.rejects(d.listeners.rmmax_play(), /Mapped command is unavailable/);
   await assert.rejects(d.listeners[commands.buttonCapability(favorite.id)](), /no longer exists/);
   assert.equal(state.sends.length, 0);
@@ -357,5 +451,348 @@ test('operation queue rejects excess and expired work without sending it', async
   assert.equal(state.sends.length, 1);
   wait.resolve(); await active; await second; await third;
   assert.equal(state.sends.length, 3);
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+
+test('all three cloud drivers add remotes through email-code authentication without persisting the code', async t => {
+  let now = 2100000000000; t.mock.method(Date, 'now', () => now);
+  for (const model of Object.keys(types)) {
+    now += 1000000; reset(model);
+    const x = makeDriver(model); await x.driver.onInit(); const h = socket(x.driver);
+    assert.deepEqual(await h.cloud_request_code({ email: 'owner@example.org' }), { retryAfter: 60 });
+    const login = await h.cloud_login({ email: 'owner@example.org', code: '001234', method: 'email_code' });
+    assert.equal(login.homes.length, 2);
+    await h.cloud_discover({ homeId: 'home1' });
+    const preview = await h.cloud_preview({ hubId: 'hub1', remoteId: 'remote1' });
+    const result = await h.cloud_complete({ hubId: 'hub1', remoteId: 'remote1', mappings: preview.mappings, buttons: preview.buttons });
+    const bundle = x.driver.takePairingBundle(result.device.store.bootstrapToken, result.device.data.id);
+    assert.deepEqual(state.codeEmails, ['owner@example.org']);
+    assert.deepEqual(state.codeLogins, [{ email: 'owner@example.org', code: '001234' }]);
+    assert.deepEqual(bundle.session, { ...account, familyId: 'home1' });
+    assert.equal(result.device.data.id, commands.deviceId({ ...account, familyId: 'home1' }, hub(model), remote));
+    assert(!JSON.stringify(bundle).includes('001234'));
+    assert(!JSON.stringify([login, preview, result]).includes(account.loginSession));
+    const d = deviceFor({ ...x, bundle, result }); await d.device.onInit();
+    assert.equal(d.device.unavailable, false); assert.deepEqual(d.store.get('rm_cloud').session, bundle.session);
+    await d.device.onUninit(); x.driver.onUninit();
+  }
+});
+
+test('email-code Repair retains the original remote, controls and Flow IDs', async t => {
+  t.mock.method(Date, 'now', () => 2200000000000);
+  const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+  const original = copy(d.store.get('rm_cloud'));
+  state.account = { ...account, loginSession: 'renewed-by-code' };
+  const h = socket(x.driver, d.device);
+  await h.cloud_request_code({ email: 'owner@example.org' });
+  await h.cloud_login({ email: 'owner@example.org', code: '001234', method: 'email_code' });
+  await h.cloud_discover({ homeId: 'home1' });
+  const preview = await h.cloud_preview({ hubId: 'hub1', remoteId: 'remote1' });
+  assert.deepEqual(await h.cloud_complete({ hubId: 'hub1', remoteId: 'remote1', mappings: preview.mappings, buttons: preview.buttons }), { repair: true });
+  const saved = d.store.get('rm_cloud');
+  assert.equal(saved.session.loginSession, 'renewed-by-code');
+  assert.deepEqual(saved.mappings, original.mappings); assert.deepEqual(saved.buttons, original.buttons);
+  assert.deepEqual(saved.commands.map(c => c.id), original.commands.map(c => c.id));
+  assert.equal(d.device.getData().id, x.result.device.data.id);
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('code requests clear prior previews, reject Magic Home and respect disconnect/driver shutdown', async t => {
+  let now = 2300000000000; t.mock.method(Date, 'now', () => now);
+  const x = await paired(); const h = x.handlers;
+  await assert.rejects(h.cloud_request_code({ provider: 'magic_home', email: 'owner@example.org' }), /BroadLink EU/);
+  assert.equal(state.codeEmails, undefined);
+  await assert.rejects(h.cloud_complete({ hubId: 'hub1', remoteId: 'remote1', mappings: {}, buttons: [] }));
+  const send = deferred(); state.codeSend = () => send.promise;
+  const pending = h.cloud_request_code({ email: 'owner@example.org' });
+  await h.disconnect(); send.resolve(); await assert.rejects(pending, /expired/);
+  const h2 = socket(x.driver); now += 60000; state.codeSend = undefined;
+  await h2.cloud_request_code({ email: 'owner@example.org' });
+  const login = deferred(); state.codeLogin = () => login.promise;
+  const verifying = h2.cloud_login({ email: 'owner@example.org', code: '001234', method: 'email_code' });
+  const reads = state.homesReads;
+  x.driver.onUninit(); login.resolve(copy(account));
+  await assert.rejects(verifying, /expired/); assert.equal(state.homesReads, reads);
+});
+
+test('a new code request renews an expired cloud pairing session and invalidates its old preview', async t => {
+  let now = 2400000000000; t.mock.method(Date, 'now', () => now);
+  for (const model of Object.keys(types)) {
+    now += 1000000; reset(model);
+    const x = makeDriver(model); await x.driver.onInit();
+    const selected = await select(x.driver); const h = selected.handlers;
+    now += 600001;
+    await assert.rejects(h.cloud_complete({ hubId: 'hub1', remoteId: 'remote1', mappings: {}, buttons: [] }), e => e.code === 'PAIRING_EXPIRED');
+    await assert.rejects(h.cloud_login({ email: 'owner@example.org', code: '001234', method: 'email_code' }), e => e.code === 'PAIRING_EXPIRED');
+    assert.equal(state.codeEmails, undefined); assert.equal(state.codeLogins, undefined);
+    assert.deepEqual(await h.cloud_request_code({ email: 'owner@example.org' }), { retryAfter: 60 });
+    await assert.rejects(h.cloud_complete({ hubId: 'hub1', remoteId: 'remote1', mappings: {}, buttons: [] }));
+    await h.cloud_login({ email: 'owner@example.org', code: '001234', method: 'email_code' });
+    await h.cloud_discover({ homeId: 'home1' });
+    const preview = await h.cloud_preview({ hubId: 'hub1', remoteId: 'remote1' });
+    const completed = await h.cloud_complete({ hubId: 'hub1', remoteId: 'remote1', mappings: preview.mappings, buttons: [] });
+    assert.equal(completed.device.data.id, commands.deviceId({ ...account, familyId: 'home1' }, hub(model), remote));
+    assert(x.logs.some(line => /session renewed after expiry/.test(line)));
+    assert(x.logs.some(line => /cloud_complete failed.*Pairing session expired/.test(line)));
+    assert(x.logs.some(line => /cloud_request_code started/.test(line)));
+    assert(x.logs.some(line => /cloud_request_code succeeded; durationMs=/.test(line)));
+    assert(x.logs.some(line => /cloud_login succeeded/.test(line)));
+    assert(!x.logs.join('\n').includes('owner@example.org')); assert(!x.logs.join('\n').includes('001234')); assert(!x.logs.join('\n').includes(account.loginSession));
+    x.driver.onUninit();
+  }
+});
+
+test('pairing logs blocked and failed requests without releasing another in-flight request or exposing secrets', async t => {
+  t.mock.method(Date, 'now', () => 2500000000000); reset();
+  const x = makeDriver(); await x.driver.onInit(); const h = socket(x.driver);
+  const sending = deferred(); state.codeSend = () => sending.promise;
+  const request = h.cloud_request_code({ email: 'owner@example.org' });
+  await assert.rejects(h.cloud_request_code({ email: 'other@example.org' }), e => e.code === 'PAIRING_BUSY');
+  await assert.rejects(h.cloud_context(), e => e.code === 'PAIRING_BUSY');
+  sending.resolve(); await request;
+  await h.disconnect();
+  await assert.rejects(h.cloud_request_code({ email: 'owner@example.org' }), e => e.code === 'PAIRING_CLOSED');
+  assert.equal(state.codeEmails.length, 1);
+  assert(x.logs.some(line => /cloud_context failed.*still running/.test(line)));
+  assert(x.logs.some(line => /session disconnected/.test(line)));
+  assert(x.logs.some(line => /cloud_request_code failed.*session expired or closed/.test(line)));
+  const next = socket(x.driver);
+  state.codeLogin = async () => { throw Error('owner@example.org 001234 private-session'); };
+  // Use the existing requested challenge in a fresh session only after another request.
+  await assert.rejects(next.cloud_login({ email: 'owner@example.org', code: '001234', method: 'email_code' }));
+  assert(!x.logs.join('\n').includes('owner@example.org')); assert(!x.logs.join('\n').includes('001234')); assert(!x.logs.join('\n').includes('private-session'));
+  x.driver.onUninit();
+  await assert.rejects(next.cloud_request_code({ email: 'owner@example.org' }), e => e.code === 'PAIRING_CLOSED');
+});
+
+test('remembered login method and email carry across cloud drivers and follow the original Repair account', async t => {
+  t.mock.method(Date, 'now', () => 2600000000000); reset();
+  const x = makeDriver(); await x.driver.onInit(); const h = socket(x.driver);
+  assert.equal((await h.cloud_context()).login, null);
+  await h.cloud_request_code({ email: 'owner@example.org' });
+  await h.cloud_login({ email: 'owner@example.org', code: '001234', method: 'email_code' });
+  const expected = { email: 'owner@example.org', method: 'email_code' };
+  const another = makeDriver('rm3_mini'); another.driver.homey.settings = x.driver.homey.settings;
+  await another.driver.onInit();
+  assert.deepEqual((await socket(another.driver).cloud_context()).login, expected);
+  const repairDevice = { getStoreValue: () => ({ session: { ...account } }), controlsPreview() { return {}; } };
+  assert.deepEqual((await socket(x.driver, repairDevice).cloud_context()).login, expected);
+  const other = socket(x.driver);
+  state.account = { ...account, userId: 'second' };
+  await other.cloud_login({ email: 'second@example.org', password: 'secret-password' });
+  assert.deepEqual((await socket(x.driver).cloud_context()).login, { email: 'second@example.org', method: 'password' });
+  assert.deepEqual((await socket(x.driver, repairDevice).cloud_context()).login, expected);
+  const saved = JSON.stringify(x.driver.homey.settings.get('broadlink_cloud_login_preferences'));
+  for (const secret of ['001234', 'secret-password', 'private-session']) assert(!saved.includes(secret));
+  x.driver.onUninit(); another.driver.onUninit();
+});
+
+test('new single-toggle pairings expose standard onoff without an automatic named power button', async () => {
+  for (const model of Object.keys(types)) {
+    reset(model); state.rows = [row('Power', 'power_toggle')];
+    const x = makeDriver(model); await x.driver.onInit(); const selected = await select(x.driver);
+    const result = await selected.handlers.cloud_complete({ hubId: 'hub1', remoteId: 'remote1', mappings: selected.preview.mappings, buttons: [] });
+    assert(result.device.capabilities.includes('onoff'));
+    assert(!result.device.capabilities.some(id => id.startsWith('rmcloud_button.')));
+    const bundle = x.driver.takePairingBundle(result.device.store.bootstrapToken, result.device.data.id);
+    const d = deviceFor({ ...x, result, bundle }); await d.device.onInit();
+    assert(d.device.hasCapability('onoff')); assert.equal(typeof d.listeners.onoff, 'function');
+    assert.equal(d.values.onoff, undefined, 'pairing does not infer appliance state');
+    await d.device.onUninit(); x.driver.onUninit();
+  }
+});
+
+test('single-toggle onoff sends each requested value once and updates only after acknowledgment', async () => {
+  const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+  const power = x.bundle.commands.find(command => command.function === 'power_on');
+  await d.device.updateControls({ mappings: { power_toggle: power.id }, buttons: [power.id] });
+  const id = commands.buttonCapability(power.id);
+  assert(d.device.hasCapability('onoff')); assert(d.device.hasCapability(id));
+  assert.equal(d.device.getCapabilityOptions(id).title, 'On');
+  const originalSend = d.device._sendCloudCommand.bind(d.device); const sentCommands = [];
+  d.device._sendCloudCommand = (client, command) => { sentCommands.push(copy(command)); return originalSend(client, command); };
+  for (const value of [true, false, false]) {
+    const acknowledgment = deferred(); state.send = () => acknowledgment.promise;
+    const before = d.values.onoff; const sends = state.sends.length; const triggers = x.triggers.length;
+    const pending = d.listeners.onoff(value); await tick();
+    assert.equal(state.sends.length, sends + 1); assert.equal(d.values.onoff, before); assert.equal(x.triggers.length, triggers);
+    acknowledgment.resolve(); assert.equal(await pending, true);
+    assert.equal(d.values.onoff, value); assert.equal(x.triggers.length, triggers + 1);
+  }
+  state.send = undefined;
+  await d.listeners[id]();
+  assert.equal(d.values.onoff, false, 'an additional raw toggle button does not guess a new state');
+  assert.equal(state.sends.length, 4); assert(state.sends.every(send => send.code === power.code));
+  assert(sentCommands.every(command => command.namespace === undefined && command.payload === undefined));
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('failed toggle acknowledgment leaves onoff unchanged and emits no sent-command Flow trigger', async () => {
+  const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+  await d.device.updateControls({ mappings: { power_toggle: x.bundle.mappings.power_on }, buttons: [] });
+  await d.device.setCapabilityValue('onoff', false);
+  state.send = async () => { throw Object.assign(Error('unrecognized response'), { code: 'RM_CLOUD_RESPONSE', reason: 'ack_unrecognized', ackBytes: 16 }); };
+  await assert.rejects(d.listeners.onoff(true), /ack_unrecognized/);
+  assert.equal(state.sends.length, 1); assert.equal(d.values.onoff, false); assert.equal(x.triggers.length, 0);
+  assert.equal(d.device.unavailable, false);
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('one-sided discrete onoff rejects the missing direction before sending and retains explicit additional buttons', async () => {
+  for (const [role, supported] of [['power_on', true], ['power_off', false]]) {
+    const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+    const power = x.bundle.commands.find(command => command.id === x.bundle.mappings[role]);
+    const id = commands.buttonCapability(power.id);
+    await d.device.updateControls({ mappings: { [role]: power.id }, buttons: [power.id] });
+    assert(d.device.hasCapability('onoff')); assert(d.device.hasCapability(id));
+    assert.equal(d.device.getCapabilityOptions(id).title, power.name);
+    await assert.rejects(d.listeners.onoff(!supported), /map the missing direction or use Power button \(toggle\)/);
+    assert.equal(state.sends.length, 0); assert.equal(x.triggers.length, 0); assert.equal(d.values.onoff, undefined);
+    await d.listeners.onoff(supported);
+    assert.deepEqual(state.sends.map(send => send.code), [power.code]); assert.equal(d.values.onoff, supported);
+    await d.listeners[id](); assert.equal(state.sends.length, 2);
+    await d.device.onUninit(); x.driver.onUninit();
+  }
+});
+
+test('discrete onoff directions take precedence over an explicit toggle fallback', async () => {
+  const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+  const { power_on: on, power_off: off } = x.bundle.mappings;
+  const toggle = x.bundle.buttons[0];
+  await d.device.updateControls({ mappings: { power_on: on, power_off: off, power_toggle: toggle }, buttons: [] });
+  await d.listeners.onoff(true); await d.listeners.onoff(false);
+  assert.deepEqual(state.sends.map(send => send.code), [on, off].map(id => x.bundle.commands.find(command => command.id === id).code));
+  await d.device.updateControls({ mappings: { power_on: on, power_toggle: toggle }, buttons: [] });
+  await d.listeners.onoff(false);
+  assert.equal(state.sends[2].code, x.bundle.commands.find(command => command.id === toggle).code);
+  assert.equal(d.values.onoff, false);
+  assert(!d.device.getCapabilities().some(id => id.startsWith('rmcloud_button.')));
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('old automatic power buttons migrate to onoff before removal and preserve explicit additional buttons idempotently', async () => {
+  const x = await paired(); const power = x.bundle.mappings.power_on;
+  x.bundle.mappings = { power_toggle: power };
+  const d = deviceFor(x); const oldId = commands.buttonCapability(power); const explicitId = commands.buttonCapability(x.bundle.buttons[0]);
+  d.device.caps.add(oldId); d.device.caps.add(explicitId);
+  const changes = []; const logs = []; d.device.log = message => logs.push(message);
+  const add = d.device.addCapability.bind(d.device), remove = d.device.removeCapability.bind(d.device);
+  d.device.addCapability = async id => { changes.push(['add', id]); await add(id); };
+  d.device.removeCapability = async id => { changes.push(['remove', id]); await remove(id); };
+  const saved = copy(d.store.get('rm_cloud'));
+  await d.device.onInit();
+  assert(d.device.hasCapability('onoff')); assert(!d.device.hasCapability(oldId)); assert(d.device.hasCapability(explicitId));
+  assert(changes.findIndex(([action, id]) => action === 'add' && id === 'onoff') < changes.findIndex(([action, id]) => action === 'remove' && id === oldId));
+  assert(logs.some(line => /capability migration completed: onoff/.test(line)));
+  assert(!logs.join('\n').includes(account.loginSession)); assert(!logs.join('\n').includes('Favorite'));
+  const count = changes.length; await d.device._syncCapabilities(); assert.equal(changes.length, count);
+  assert.deepEqual(d.store.get('rm_cloud'), saved); assert.equal(d.device.getData().id, x.result.device.data.id);
+  assert.deepEqual(d.device.onAutoComplete(), x.preview.commands);
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('a failed onoff capability migration retains the old automatic power button', async () => {
+  const x = await paired(); const power = x.bundle.mappings.power_on;
+  x.bundle.mappings = { power_toggle: power }; x.bundle.buttons = []; x.bundle.buttonLabels = {};
+  const d = deviceFor(x); const oldId = commands.buttonCapability(power); const logs = [];
+  d.device.caps.add(oldId); d.device.log = message => logs.push(message);
+  const add = d.device.addCapability.bind(d.device);
+  d.device.addCapability = async id => { if (id === 'onoff') throw Error('SDK rejected capability'); return add(id); };
+  await d.device.onInit();
+  assert(d.device.hasCapability(oldId)); assert(!d.device.hasCapability('onoff'));
+  assert.match(d.device.unavailable, /Homey controls/);
+  assert(logs.some(line => /capability migration failed: onoff/.test(line)));
+  d.device.addCapability = add; await d.device._syncCapabilities();
+  assert(d.device.hasCapability('onoff')); assert(!d.device.hasCapability(oldId));
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('unrecognized command acknowledgements stay distinct from authorization and inventory availability', async () => {
+  const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+  const logs = []; d.device.log = message => logs.push(message);
+  state.send = async () => { throw Object.assign(Error('private session and command echo'), { code: 'RM_CLOUD_RESPONSE', reason: 'ack_unrecognized', ackBytes: 16 }); };
+  await assert.rejects(d.listeners.volume_up(), /reason=ack_unrecognized, ackBytes=16/);
+  assert.equal(d.device.unavailable, false); assert.equal(d.device._authRequired, false);
+  assert.equal(state.sends.length, 1); assert.equal(x.triggers.length, 0);
+  assert(!logs.join('\n').includes('private')); assert(!d.values.rmmax_status.includes('Repair'));
+  assert(x.timers.has(d.device._pollTimer));
+  state.send = undefined;
+  await d.listeners.volume_up(); assert.equal(state.sends.length, 2); assert.equal(x.triggers.length, 1);
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('explicit token, offline and missing command errors still enter the appropriate recovery path', async () => {
+  for (const [errorType, code] of [['INVALID_ACCESSTOKEN', 'AUTH_REQUIRED'], ['ENDPOINT_UNREACHABLE', 'ENDPOINT_OFFLINE'], ['NO_SUCH_ENDPOINT', 'ENDPOINT_MISSING']]) {
+    const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+    state.send = async () => { throw Object.assign(Error('private response'), { code, reason: 'error_response', errorType, deviceStatus: -3 }); };
+    await assert.rejects(d.listeners.volume_up(), new RegExp('errorType=' + errorType));
+    assert.equal(state.sends.length, 1); assert.equal(x.triggers.length, 0);
+    assert.equal(d.device._authRequired, code === 'AUTH_REQUIRED');
+    if (code === 'AUTH_REQUIRED') {
+      assert.match(d.device.unavailable, /Repair/); assert.equal(d.device._pollTimer, undefined);
+    } else {
+      assert.match(d.device.unavailable, /Checking again/); assert(x.timers.has(d.device._pollTimer));
+      assert(!d.device.unavailable.includes('private'));
+    }
+    await d.device.onUninit(); x.driver.onUninit();
+  }
+});
+
+test('the reported -5 control response means no device response, without alleging expired login or powered-off state', async () => {
+  const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+  state.send = async () => { throw Object.assign(Error('private response'), { code: 'ENDPOINT_OFFLINE', reason: 'error_response', errorType: 'ENDPOINT_UNREACHABLE', deviceStatus: -5 }); };
+  await assert.rejects(d.listeners.volume_up(), /deviceStatus=-5/);
+  assert.match(d.device.unavailable, /no response.*status -5/);
+  assert(!/offline|Repair|authorization/.test(d.device.unavailable));
+  assert.equal(d.device._authRequired, false); assert.equal(state.sends.length, 1); assert.equal(x.triggers.length, 0);
+  assert.equal(x.timers.get(d.device._pollTimer).ms, 60000);
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('stopping while a toggle acknowledgment updates onoff cancels the old operation without additional commands', async () => {
+  const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+  await d.device.updateControls({ mappings: { power_toggle: x.bundle.mappings.power_on }, buttons: [] });
+  const status = deferred(); const entered = deferred(); const write = d.device.setCapabilityValue.bind(d.device);
+  d.device.setCapabilityValue = async (id, value) => {
+    if (id === 'onoff') { entered.resolve(); await status.promise; }
+    return write(id, value);
+  };
+  const power = d.listeners.onoff(true); const rejected = assert.rejects(power, /cancelled/);
+  await entered.promise;
+  const stopping = d.device.onUninit(); status.resolve(); await rejected; await stopping;
+  assert.equal(state.sends.length, 1); assert.equal(x.triggers.length, 0);
+  assert.equal(d.device._pollTimer, undefined);
+  x.driver.onUninit();
+});
+
+test('sent-command Flows observe the acknowledged requested state for the standard toggle power control', async () => {
+  const x = await paired(); const d = deviceFor(x); await d.device.onInit();
+  await d.device.updateControls({ mappings: { power_toggle: x.bundle.mappings.power_on }, buttons: [] });
+  const observed = [];
+  x.driver.commandSent.trigger = async () => { observed.push(d.values.onoff); };
+  await d.listeners.onoff(true); await d.listeners.onoff(false);
+  assert.deepEqual(observed, [true, false]); assert.equal(state.sends.length, 2);
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('real cloud short-ack parsing completes controls, power values and sent-command Flows without resending', async () => {
+  const x = await paired('rm4_mini'); const d = deviceFor(x); await d.device.onInit();
+  let requests = 0;
+  const client = new realCloud.BroadlinkCloud(x.bundle.session, { request: async (url, req) => {
+    requests++;
+    const directive = JSON.parse(req.body).directive;
+    return { event: { header: { namespace: 'DNA.TransmissionControl', name: 'Response', interfaceVersion: '2', messageId: directive.header.messageId },
+      endpoint: { endpointId: directive.endpoint.endpointId }, payload: { data: 'AgAAAA==' } } };
+  } });
+  state.send = () => { const sent = state.sends.at(-1); return client.sendRMCode(sent.endpoint, sent.code); };
+  const observed = [];
+  x.driver.commandSent.trigger = async () => { observed.push(d.values.onoff); };
+  await d.listeners.onoff(true); await d.listeners.volume_up(); await d.listeners.onoff(false);
+  assert.deepEqual(observed, [true, true, false]);
+  assert.equal(d.values.onoff, false); assert.equal(d.device.unavailable, false);
+  assert.equal(d.values.rmmax_status, 'Command acknowledged via cloud');
+  assert.equal(requests, 3); assert.equal(state.sends.length, 3);
+  assert.deepEqual(state.sends.map(sent => sent.code), [rows[0].codeList[0].code, rows[2].codeList[0].code, rows[1].codeList[0].code]);
   await d.device.onUninit(); x.driver.onUninit();
 });

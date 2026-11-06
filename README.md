@@ -22,6 +22,8 @@ Use [Homey](https://www.athom.com/) together with [Broadlink devices](http://www
 
 Others might follow...
 
+BroadLink EU cloud drivers also support [email verification-code sign-in and Repair](docs/email-code-sign-in.md).
+
 # Debug and Error log
 
 In the application settings, there are 2 flags to enable logging: Debug and Sentry.

@@ -20,6 +20,47 @@ test('EU login is encrypted with SDK hash, token, padding and headers', async ()
   } });
   assert.deepEqual(session, { provider: 'broadlink_eu', userId: 'u', loginSession: 's' });
 });
+test('EU email code endpoints use account encryption and return the existing session contract', async () => {
+  const calls = [];
+  const request = async (url, req) => {
+    const aes = crypto.createHash('md5').update(req.headers.timestamp + 'kdixkdqp54545^#*').digest();
+    const decipher = crypto.createDecipheriv('aes-128-cbc', aes, Buffer.from('eaaaaa3abb5862a21918b5771d1615aa', 'hex')); decipher.setAutoPadding(false);
+    const plain = Buffer.concat([decipher.update(req.body), decipher.final()]).toString().replace(/\0+$/, '');
+    assert.equal(req.headers.token, crypto.createHash('md5').update(plain + 'xgx3d*fe3478$ukx').digest('hex'));
+    assert.equal(req.headers.email, 'owner@example.org'); assert.equal(req.timeoutMs, 10000);
+    assert.equal(req.headers['content-type'], 'application/x-java-serialized-object');
+    const fields = JSON.parse(plain);
+    assert.equal(fields.lid, req.headers.lid); assert.equal(fields.companyid, 'b0491bc574dfa144908c3cd671f56370');
+    assert.equal(fields.email, 'owner@example.org');
+    calls.push({ path: new URL(url).pathname, fields });
+    if (url.endsWith('/fastlogincode')) { assert.deepEqual(Object.keys(fields).sort(), ['companyid', 'email', 'lid']); return { error: 0, msg: 'sent' }; }
+    assert.equal(fields.code, '001234'); assert.equal(fields.logintry, 'true'); assert(!('password' in fields));
+    return { error: 0, userid: 'owner', loginsession: 'existing-session', email: 'unnecessary@example.org' };
+  };
+  assert.equal(await BroadlinkCloud.requestEmailCode(' owner@example.org ', { request }), undefined);
+  const session = await BroadlinkCloud.loginWithEmailCode('owner@example.org', '001234', { request });
+  assert.deepEqual(calls.map(c => c.path), ['/account/fastlogincode', '/account/fastlogin']);
+  assert.deepEqual(session, { provider: 'broadlink_eu', userId: 'owner', loginSession: 'existing-session' });
+});
+
+test('email-code failures preserve safe status details, require complete sessions and never retry', async () => {
+  for (const [status, code] of [[-1002, 'EMAIL_CODE_INVALID'], [-1007, 'EMAIL_CODE_INVALID'], [-1039, 'EMAIL_CODE_INVALID'], [-1031, 'EMAIL_CODE_EXPIRED'], [-1012, 'AUTH_REQUIRED']]) {
+    let calls = 0;
+    await assert.rejects(BroadlinkCloud.loginWithEmailCode('owner@example.org', '001234', { request: async () => { calls++; return { error: status, msg: 'secret-code-and-address' }; } }), e => e.code === code && e.remoteStatus === status && !e.message.includes('secret'));
+    assert.equal(calls, 1);
+  }
+  for (const value of [null, {}, { error: '0' }, { error: 0 }, { error: 0, userid: 'owner' }, { error: 0, userid: 'owner', loginsession: '' }]) await assert.rejects(BroadlinkCloud.loginWithEmailCode('owner@example.org', '001234', { request: async () => value }));
+  let calls = 0;
+  const request = async () => { calls++; throw Error('secret request code'); };
+  await assert.rejects(BroadlinkCloud.requestEmailCode('owner@example.org', { request }), e => !e.message.includes('secret'));
+  assert.equal(calls, 1);
+  await assert.rejects(BroadlinkCloud.requestEmailCode('owner@example.org', { timeoutMs: 5, request: () => { calls++; return new Promise(() => {}); } }), e => e.code === 'TIMEOUT');
+  assert.equal(calls, 2);
+  for (const email of ['bad', 'x@y.z\nsecret']) await assert.rejects(BroadlinkCloud.requestEmailCode(email, { request }));
+  for (const code of ['', 1234, '1'.repeat(33), '1234\nsecret']) await assert.rejects(BroadlinkCloud.loginWithEmailCode('owner@example.org', code, { request }));
+  assert.equal(calls, 2);
+});
+
 test('EU family, discovery, remotes preserve ten codes, duplicate and sequence', async () => {
   const commands = Array.from({ length: 10 }, (_, i) => ({ function: `RF${i}`, codeList: [{ code: i < 2 ? 'aaaa' : 'bbbb' }, { code: 'cccc' }] }));
   const cloud = new BroadlinkCloud(euSession, { request: async (url, req) => {
@@ -37,6 +78,10 @@ test('EU send uses exact envelope, validates ack and never retries', async () =>
   let count = 0;
   const cloud = new BroadlinkCloud(euSession, { request: async (url, req) => {
     count++; assert.match(url, /\/device\/control\/v2\/sdkcontrol\?license=/);
+    const license = new URL(url).searchParams.get('license');
+    assert.match(license, /^[A-Za-z0-9+/]+={0,2}$/);
+    assert(license.includes('+'), 'the original license plus must survive query decoding');
+    assert.equal(Buffer.from(license, 'base64').toString('base64'), license);
     const d = JSON.parse(req.body).directive; assert.equal(d.payload.data, Buffer.from('02000000aabb', 'hex').toString('base64'));
     assert.equal(JSON.parse(Buffer.from(d.endpoint.devicePairedInfo.cookie, 'base64')).device.id, 0x12345678);
     return { event: { header: { namespace: 'DNA.TransmissionControl', name: 'Response', interfaceVersion: '2', messageId: d.header.messageId }, endpoint: { endpointId: 'hub' }, payload: { data: 'AgAAAAAAAAAAAAAAAAAAAA==' } } };
