@@ -659,6 +659,34 @@
         ]
       },
       {
+        "id": "RC_sent_any_rm5_plus_cloud",
+        "title": {
+          "en": "A remote command was sent",
+          "nl": "Een afstandsbedieningscommando is verzonden"
+        },
+        "tokens": [
+          {
+            "name": "CommandSent",
+            "type": "string",
+            "title": {
+              "en": "Command sent",
+              "nl": "Verzonden commando"
+            },
+            "example": {
+              "en": "Power",
+              "nl": "Aan/uit"
+            }
+          }
+        ],
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM5_plus_cloud"
+          }
+        ]
+      },
+      {
         "id": "RC_sent_any_rm_max",
         "title": {
           "en": "A remote command was sent",
@@ -1807,6 +1835,60 @@
             "type": "device",
             "name": "device",
             "filter": "driver_id=RM4_pro_cloud"
+          }
+        ]
+      },
+      {
+        "id": "send_command_rm5_plus_cloud",
+        "title": {
+          "en": "Send a command",
+          "nl": "Verstuur een commando"
+        },
+        "titleFormatted": {
+          "en": "Send command [[variable]]",
+          "nl": "Verstuur commando [[variable]]"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM5_plus_cloud"
+          },
+          {
+            "name": "variable",
+            "type": "autocomplete",
+            "placeholder": {
+              "en": "Command",
+              "nl": "Commando"
+            }
+          }
+        ]
+      },
+      {
+        "id": "refresh_commands_rm5_plus_cloud",
+        "title": {
+          "en": "Refresh saved commands",
+          "nl": "Opgeslagen commando's vernieuwen"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM5_plus_cloud"
+          }
+        ]
+      },
+      {
+        "id": "check_connection_rm5_plus_cloud",
+        "title": {
+          "en": "Check cloud connection",
+          "nl": "Controleer cloudverbinding"
+        },
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=RM5_plus_cloud"
           }
         ]
       },
@@ -4819,6 +4901,55 @@
       "images": {
         "small": "/drivers/RM4_pro_cloud/assets/images/small.jpg",
         "large": "/drivers/RM4_pro_cloud/assets/images/large.jpg"
+      },
+      "class": "other",
+      "platforms": [
+        "local"
+      ],
+      "connectivity": [
+        "cloud"
+      ],
+      "capabilities": [
+        "rmmax_status",
+        "button.refresh",
+        "button.check_connection"
+      ],
+      "capabilitiesOptions": {
+        "button.refresh": {
+          "title": {
+            "en": "Refresh saved commands",
+            "nl": "Opgeslagen commando's vernieuwen"
+          },
+          "icon": "/assets/rm-cloud/refresh.svg"
+        },
+        "button.check_connection": {
+          "title": {
+            "en": "Check cloud connection",
+            "nl": "Cloudverbinding controleren"
+          },
+          "icon": "/drivers/RM_max/assets/connection.svg"
+        }
+      },
+      "pair": [
+        {
+          "id": "cloud"
+        }
+      ],
+      "repair": [
+        {
+          "id": "cloud"
+        }
+      ]
+    },
+    {
+      "id": "RM5_plus_cloud",
+      "name": {
+        "en": "RM5 Plus (Cloud)",
+        "nl": "RM5 Plus (Cloud)"
+      },
+      "images": {
+        "small": "/drivers/RM5_plus_cloud/assets/images/small.jpg",
+        "large": "/drivers/RM5_plus_cloud/assets/images/large.jpg"
       },
       "class": "other",
       "platforms": [

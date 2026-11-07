@@ -1,6 +1,6 @@
 # BroadLink EU email verification-code sign-in
 
-RM3 Mini (Cloud), RM4 Mini (Cloud), RM4 Pro (Cloud) and the BroadLink EU option
+RM3 Mini (Cloud), RM4 Mini (Cloud), RM4 Pro (Cloud), RM5 Plus (Cloud) and the BroadLink EU option
 in RM Max accept a password or an emailed login code during pairing and Repair.
 This uses the existing EU account transport, without a new Google/Apple OAuth
 registration. Magic Home continues to use its own authorization-code flow.
@@ -8,7 +8,7 @@ registration. Magic Home continues to use its own authorization-code flow.
 ## Use and test
 
 1. Open the matching cloud driver in **Add device**, or open **Repair** on an
-   existing device. For RM3/RM4 Repair, select **Sign in again**. For RM Max,
+   existing device. For RM3/RM4/RM5 Repair, select **Sign in again**. For RM Max,
    select **BroadLink EU**.
 2. Choose **Email verification code**, enter the email registered to the existing
    international BroadLink EU account, and press **Send verification code**.

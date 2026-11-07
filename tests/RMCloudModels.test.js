@@ -19,11 +19,12 @@ function pid(type) { const value = Buffer.alloc(16); value.writeUInt16LE(type, 1
 function hub(type) { return { endpointId: 'hub', productId: pid(type), mac: 'aa:bb:cc:dd:ee:ff', devicetypeFlag: 1, cookie: Buffer.from(JSON.stringify(cookie)).toString('base64') }; }
 function ack(directive) { return { event: { header: { namespace: 'DNA.TransmissionControl', name: 'Response', interfaceVersion: '2', messageId: directive.header.messageId }, endpoint: { endpointId: directive.endpoint.endpointId }, payload: { data: 'AgAAAAAAAAAAAAAAAAAAAA==' } } }; }
 
-test('only explicit allowlisted RM3 Mini and RM4 types/PIDs identify a hub', () => {
+test('only explicit allowlisted RM3 Mini, RM4 and RM5 Plus types/PIDs identify a hub', () => {
   const groups = {
     rm3_mini: [0x2737, 0x278f, 0x27c2, 0x5f36],
     rm4_mini: [0x51da, 0x5209, 0x520c, 0x520d, 0x5211, 0x5212, 0x5216, 0x521c, 0x6070, 0x610e, 0x610f, 0x62bc, 0x62be, 0x6364, 0x648d, 0x6539, 0x653a],
     rm4_pro: [0x520b, 0x5213, 0x5218, 0x6026, 0x6184, 0x61a2, 0x649b, 0x653c],
+    rm5_plus: [0x5224],
   };
   for (const [model, types] of Object.entries(groups)) for (const devtype of types) {
     const expected = { model, devtype };
@@ -35,21 +36,37 @@ test('only explicit allowlisted RM3 Mini and RM4 types/PIDs identify a hub', () 
   assert.equal(modelLabel('rm3_mini'), 'RM3 Mini');
   assert.equal(modelLabel('rm4_mini'), 'RM4 Mini');
   assert.equal(modelLabel('rm4_pro'), 'RM4 Pro');
+  assert.equal(modelLabel('rm5_plus'), 'RM5 Plus');
   assert.equal(modelLabel('__proto__'), '');
 });
 
+test('RM5 Plus canonical reported PID is distinct from RM4 models and conflicting identities fail closed', () => {
+  // Reported PID, independent of this test file's PID construction helper.
+  // https://github.com/mjg59/python-broadlink/issues/829
+  const productId = '00000000000000000000000024520000';
+  assert.deepEqual(identifyHub({ productId }), { model: 'rm5_plus', devtype: 0x5224 });
+  for (const endpoint of [
+    { friendlyName: 'RM5 Plus' },
+    { productId, model: 'rm4_mini' },
+    { productId, devtype: 0x520c },
+    { devtype: 0x5224, cookie: { pid: pid(0x520c) } },
+    { productId: '00000000000000000000000052240000' },
+  ]) assert.equal(identifyHub(endpoint), null);
+});
+
 test('unknown, ambiguous, malformed or contradictory identity fails closed', () => {
-  for (const endpoint of [null, [], {}, { name: 'RM4 Pro' }, { model: 'rm4_pro' }, { devtype: '0x520b' }, { devtype: 0x2712 }, { devtype: 0x5224 }, { devtype: 0xaf8b }, { productId: pid(0xaf8b) }, { productId: pid(0x5224) }, { productId: '520b' }, { productId: '000000000000000000000000520b0000' }, { devtype: 0x520b, productId: pid(0x51da) }, { devtype: 0x520b, cookie: { devtype: 0x5213 } }, { devtype: 0x2737, cookie: { device: { pid: pid(0x5f36) } } }, { devtype: 0x520b, cookie: 'invalid' }, { devtype: 0x520b, cookie: { device: [] } }, { devtype: 0x520b, model: 'rm4_mini' }]) {
+  for (const endpoint of [null, [], {}, { name: 'RM4 Pro' }, { model: 'rm4_pro' }, { devtype: '0x520b' }, { devtype: 0x2712 }, { devtype: 0x5225 }, { devtype: 0xaf8b }, { productId: pid(0xaf8b) }, { productId: pid(0x5225) }, { productId: '520b' }, { productId: '000000000000000000000000520b0000' }, { devtype: 0x520b, productId: pid(0x51da) }, { devtype: 0x520b, cookie: { devtype: 0x5213 } }, { devtype: 0x2737, cookie: { device: { pid: pid(0x5f36) } } }, { devtype: 0x520b, cookie: 'invalid' }, { devtype: 0x520b, cookie: { device: [] } }, { devtype: 0x520b, model: 'rm4_mini' }]) {
     assert.equal(identifyHub(endpoint), null, JSON.stringify(endpoint));
   }
 });
 
 test('validates real-shaped IR and independent synthetic RF without converting bytes', () => {
-  for (const model of ['rm3_mini', 'rm4_mini', 'rm4_pro']) assert.equal(validateCode(model, IR), true);
+  for (const model of ['rm3_mini', 'rm4_mini', 'rm4_pro', 'rm5_plus']) assert.equal(validateCode(model, IR), true);
   for (const packet of [RF, RF315, RF4]) {
     assert.equal(validateCode('rm4_pro', packet), true);
     assert.equal(validateCode('rm3_mini', packet), false);
     assert.equal(validateCode('rm4_mini', packet), false);
+    assert.equal(validateCode('rm5_plus', packet), false);
   }
   assert.equal(validateCode('rm4_mini', '260006001000012492200d050000'), true);
   for (const packet of ['', 'aa', 'zz00040011223344', '260000001122', '260010001122', '26000300110001', '2600040011000000', '26000300112233', '260002001122ff', 'b1c00c00009f06000b210d21', 'b1000800009f06000b210d21', 'b1c00800000000000b210d21', '020000002600040011223344', '260002001122' + '00'.repeat(17)]) assert.equal(validateCode('rm4_pro', packet), false, packet);
@@ -61,7 +78,7 @@ test('SDK passthrough uses the command word without the LAN length field for eve
   const raw = '2600040011223344';
   // Vendor SDK bl_protocol_proc forwards this API input to HTTP unchanged.
   // Its local bl_tfb_data_pack path alone inserts 0c00 ahead of this fixture.
-  for (const devtype of [0x2737, 0x5f36, 0x51da, 0x520c, 0x520b, 0x5213]) {
+  for (const devtype of [0x2737, 0x5f36, 0x51da, 0x520c, 0x520b, 0x5213, 0x5224]) {
     assert.equal(encodeCommand({ devtype }, raw).toString('hex'), '020000002600040011223344');
   }
   assert.equal(encodeCommand({ devtype: 0x5213 }, RF4).toString('hex'), '02000000b1c00800009f06000b210d21');
@@ -71,7 +88,7 @@ test('SDK passthrough uses the command word without the LAN length field for eve
 
 test('EU sendRMCode binds the endpoint, SDK-format IR/RF bytes and canonical credentials', async () => {
   let count = 0;
-  for (const [type, packet] of [[0x2737, IR], [0x5f36, '2600040011223344'], [0x51da, '2600040011223344'], [0x520c, IR], [0x520b, RF4], [0x5213, IR], [0x5213, RF4]]) {
+  for (const [type, packet] of [[0x2737, IR], [0x5f36, '2600040011223344'], [0x51da, '2600040011223344'], [0x520c, IR], [0x520b, RF4], [0x5213, IR], [0x5213, RF4], [0x5224, IR]]) {
     const endpoint = hub(type);
     if (type === 0x5f36) endpoint.cookie = { device: { id: cookie.terminalid, key } };
     const cloud = new BroadlinkCloud(session, { request: async (url, req) => {
@@ -93,13 +110,13 @@ test('EU sendRMCode binds the endpoint, SDK-format IR/RF bytes and canonical cre
     } });
     await cloud.sendRMCode(endpoint, packet);
   }
-  assert.equal(count, 7);
+  assert.equal(count, 8);
 });
 
 test('invalid inputs never reach the cloud transport', async () => {
   let count = 0;
   const cloud = new BroadlinkCloud(session, { request: async () => { count++; } });
-  for (const [endpoint, packet] of [[hub(0xaf8b), IR], [hub(0x5224), IR], [hub(0x51da), RF], [hub(0x520b), '260010001122'], [{ ...hub(0x520b), endpointId: '' }, IR], [{ ...hub(0x520b), cookie: {} }, IR], [{ ...hub(0x520b), cookie: { ...cookie, id: 2 } }, IR], [{ ...hub(0x520b), cookie: { ...cookie, key: 'aa'.repeat(16) } }, IR], [{ ...hub(0x520b), devtype: 0x51da }, IR]]) await assert.rejects(cloud.sendRMCode(endpoint, packet));
+  for (const [endpoint, packet] of [[hub(0xaf8b), IR], [hub(0x5225), IR], [hub(0x5224), RF], [hub(0x51da), RF], [hub(0x520b), '260010001122'], [{ ...hub(0x520b), endpointId: '' }, IR], [{ ...hub(0x520b), cookie: {} }, IR], [{ ...hub(0x520b), cookie: { ...cookie, id: 2 } }, IR], [{ ...hub(0x520b), cookie: { ...cookie, key: 'aa'.repeat(16) } }, IR], [{ ...hub(0x520b), devtype: 0x51da }, IR]]) await assert.rejects(cloud.sendRMCode(endpoint, packet));
   assert.equal(count, 0);
 });
 

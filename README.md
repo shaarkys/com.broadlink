@@ -10,7 +10,7 @@ Use [Homey](https://www.athom.com/) together with [Broadlink devices](http://www
 * [RM Pro](http://www.ibroadlink.com/rmPro)  - IR
 * [RM Pro Plus](http://www.ibroadlink.com/rmPro+)   - IR + RF
 * RM4 Pro - IR + RF
-* [RM3 Mini / RM4 Mini / RM4 Pro (Cloud)](docs/rm-cloud.md) - separate EU-account drivers for saved appliance remotes, configurable controls and command refresh; physical cloud control still requires model testing
+* [RM3 Mini / RM4 Mini / RM4 Pro / RM5 Plus (Cloud)](docs/rm-cloud.md) - separate EU-account drivers for saved appliance remotes, configurable controls and command refresh; physical cloud control still requires model testing
 * [RM Max](docs/RM-Max-cloud.md) - BroadLink EU saved IR/RF commands and optional tested local credentials; Magic Home advertised remote controls and temperature/humidity sensors, automatic cloud refresh and connection recovery
 * SP1  - power socket switch
 * SP2  - power socket switch with nightlight and meter

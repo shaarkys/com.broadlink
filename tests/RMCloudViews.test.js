@@ -70,7 +70,7 @@ function fixture(overrides = {}, language = 'en', view = source) {
 }
 
 test('all declared pairing and Repair views exist and match their source', () => {
-  for (const driver of ['RM3_mini_cloud', 'RM4_mini_cloud', 'RM4_pro_cloud']) {
+  for (const driver of ['RM3_mini_cloud', 'RM4_mini_cloud', 'RM4_pro_cloud', 'RM5_plus_cloud']) {
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'drivers', driver, 'driver.compose.json'), 'utf8'));
     for (const mode of ['pair', 'repair']) for (const view of manifest[mode]) {
       assert.equal(fs.readFileSync(path.join(root, 'drivers', driver, mode, view.id + '.html'), 'utf8'), source);

@@ -1,17 +1,17 @@
-### New cloud support: RM Max, RM3 Mini, RM4 Mini and RM4 Pro
+### New cloud support: RM Max, RM3 Mini, RM4 Mini, RM4 Pro and RM5 Plus
 
 Hi everyone,
 
-The latest **test version** adds cloud control for **RM3 Mini, RM4 Mini and RM4 Pro**, alongside the dedicated **RM Max** integration.
+The latest **test version** adds cloud control for **RM3 Mini, RM4 Mini, RM4 Pro and RM5 Plus**, alongside the dedicated **RM Max** integration. The new RM5 Plus driver supports IR only and still needs real-device cloud testing.
 
 This lets Homey use supported commands already configured in the BroadLink or Magic Home app. It also provides another option where local access is unavailable. **Internet access is required.** Existing local devices and their Flows remain available.
 
 **Install the test version:** https://homey.app/a/com.broadlink/test
 
-### RM3 Mini / RM4 Mini / RM4 Pro: setup
+### RM3 Mini / RM4 Mini / RM4 Pro / RM5 Plus: setup
 
 1. Fully configure your hub and appliance remote in the **international BroadLink app**, using an **EU account**. Check that its buttons work there and learn any additional buttons in that app.
-2. In Homey, choose **Add device → Broadlink**, then the matching **RM3 Mini (Cloud)**, **RM4 Mini (Cloud)** or **RM4 Pro (Cloud)** driver.
+2. In Homey, choose **Add device → Broadlink**, then the matching **RM3 Mini (Cloud)**, **RM4 Mini (Cloud)**, **RM4 Pro (Cloud)** or **RM5 Plus (Cloud)** driver.
 3. Sign in with your BroadLink account email and password. Alternatively, choose **Email verification code**, request a code for your registered account email, check your inbox/spam folder and enter the code.
 4. Select your **Home → hub → appliance remote**, then preview its commands. Each appliance remote is added as its own Homey device.
 5. Review **Standard controls** and assign the commands you want to use for power, volume, channel or playback.
@@ -19,7 +19,7 @@ This lets Homey use supported commands already configured in the BroadLink or Ma
 
 For a remote with one Power key, use **Power button (toggle)**. For separate On and Off keys, map them separately. This adds Homey's standard on/off control; there is no need to select Power again as an Additional button unless you want an extra raw button too.
 
-The 12-button limit applies to extra buttons in the device view. Navigation, mute and digit keys can be chosen as Additional buttons. **All supported imported commands are available through the command Flow card**, including the other keys on a custom IR/RF remote. RM3/RM4 Mini support IR; RM4 Pro also supports compatible RF commands.
+The 12-button limit applies to extra buttons in the device view. Navigation, mute and digit keys can be chosen as Additional buttons. **All supported imported commands are available through the command Flow card**, including the other keys on a custom IR/RF remote. RM3/RM4 Mini and RM5 Plus support IR; RM4 Pro also supports compatible RF commands.
 
 ### RM Max: setup
 
@@ -33,7 +33,7 @@ The available RM Max controls depend on what the selected service exposes. Magic
 ### Learning, updates and Repair
 
 * **Learn commands in the vendor app**, then press **Refresh saved commands** in Homey. Homey also refreshes approximately every **five minutes**. Direct learning from Homey is not implemented for these cloud drivers.
-* On the RM3/RM4 cloud devices, use **Repair → Change controls** to edit mappings and visible buttons without signing in again. Use **Sign in again** to renew authorization for the same account, Home, hub and remote.
+* On the RM3/RM4/RM5 cloud devices, use **Repair → Change controls** to edit mappings and visible buttons without signing in again. Use **Sign in again** to renew authorization for the same account, Home, hub and remote.
 * The last account email and sign-in method are preselected for subsequent pairing and Repair. Passwords and verification codes are not remembered. Native Google/Apple sign-in buttons are not provided.
 * The cloud connection is checked automatically. Temporary failures schedule recovery checks; rejected authorization requires Repair.
 * Rapid presses can fill the bounded command queue. Failed or uncertain sends are not automatically repeated. A cloud acknowledgement and the displayed power value do not measure the appliance's actual state.

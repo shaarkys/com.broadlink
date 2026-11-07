@@ -15,7 +15,7 @@ const account = { provider: 'broadlink_eu', userId: 'owner', loginSession: 'priv
 const remote = { endpointId: 'remote1', gatewayId: 'hub1', friendlyName: 'TV' };
 const row = (name, fn, code = IR) => ({ name, function: fn, codeList: [{ code }] });
 const rows = [row('On', 'power_on'), row('Off', 'power_off', '2600040044332211'), row('Louder', 'volume_up', '2600040010203040'), row('Favorite', 'favorite', '2600040040302010'), row('Another', 'another', '2600040020304050')];
-const types = { rm3_mini: 0x2737, rm4_mini: 0x51da, rm4_pro: 0x520b };
+const types = { rm3_mini: 0x2737, rm4_mini: 0x51da, rm4_pro: 0x520b, rm5_plus: 0x5224 };
 function hub(model = 'rm4_pro') {
   const pid = Buffer.alloc(16); pid.writeUInt16LE(types[model], 12);
   return { endpointId: 'hub1', productId: pid.toString('hex'), friendlyName: 'Room hub', mac: 'aabbccddeeff', devicetypeFlag: 1, cookie: Buffer.from(JSON.stringify({ terminalid: 123, aeskey: key })).toString('base64') };
@@ -137,6 +137,44 @@ test('each model pairs one remote with safe frontend metadata and single-use boo
     assert(!x.result.device.capabilities.includes('button.local_test'));
     assert.throws(() => x.driver.takePairingBundle(x.result.device.store.bootstrapToken, x.result.device.data.id), /expired/);
     assert.deepEqual(await x.actions.get(`send_command_${commands.MODELS[model].driverId.toLowerCase()}`).autocomplete('', { device: { onAutoComplete: query => { assert.equal(query, ''); return x.preview.commands; } } }), x.preview.commands);
+    x.driver.onUninit();
+  }
+});
+
+test('RM5 Plus supports mapped and named IR controls, command refresh and Repair with stable identity', async () => {
+  const x = await paired('rm5_plus'); const d = deviceFor(x); await d.device.onInit();
+  const id = d.device.getData().id;
+  assert.equal(x.bundle.hub.productId, '00000000000000000000000024520000');
+  assert.equal([...d.device.caps].some(cap => /temperature|humidity|learnRF/.test(cap)), false);
+  await d.listeners.onoff(true);
+  const selected = x.bundle.buttons[0];
+  await d.listeners[commands.buttonCapability(selected)]();
+  await x.actions.get('send_command_rm5_plus_cloud').run({ device: d.device, variable: { id: selected } });
+  assert.equal(state.sends.length, 3); assert.equal(x.triggers.length, 3);
+  const powerId = x.bundle.mappings.power_on;
+  state.rows[0].codeList[0].code = '2600040040302010';
+  await d.device.refreshCommands();
+  assert.equal(d.device._config.mappings.power_on, powerId);
+  await d.listeners.onoff(true);
+  assert.equal(state.sends.at(-1).code, state.rows[0].codeList[0].code);
+  const repair = await select(x.driver, d.device);
+  assert.equal((await repair.handlers.cloud_complete({ hubId: 'hub1', remoteId: 'remote1', mappings: repair.preview.mappings, buttons: repair.preview.buttons })).repair, true);
+  assert.equal(d.device.getData().id, id); assert.equal(d.device._config.model, 'rm5_plus');
+  await d.device.onUninit(); x.driver.onUninit();
+});
+
+test('RM5 Plus is isolated from the other cloud drivers and imports no RF commands', async () => {
+  for (const model of ['rm3_mini', 'rm4_mini', 'rm4_pro', 'rm5_plus']) {
+    reset('rm5_plus'); state.rows.push(row('Radio', 'radio', 'b200040011223344'));
+    const x = makeDriver(model); await x.driver.onInit();
+    const h = socket(x.driver); await h.cloud_login({ email: 'owner@example.invalid', password: 'test-pass' });
+    const found = await h.cloud_discover({ homeId: 'home1' });
+    assert.deepEqual(found.hubs.map(item => item.id), model === 'rm5_plus' ? ['hub1'] : []);
+    if (model === 'rm5_plus') {
+      const preview = await h.cloud_preview({ hubId: 'hub1', remoteId: 'remote1' });
+      assert.equal(preview.commands.length, rows.length); assert.equal(preview.skipped, 1);
+      assert(!preview.commands.some(command => command.name === 'Radio'));
+    } else await assert.rejects(h.cloud_preview({ hubId: 'hub1', remoteId: 'remote1' }), /supported hub/);
     x.driver.onUninit();
   }
 });
