@@ -1,47 +1,48 @@
 Use [Homey](https://homey.app/) together with supported [Broadlink](https://www.ibroadlink.com/) devices.
 
-**App Store – Production:** https://homey.app/a/com.broadlink
+**App Store – Production:**
+[https://homey.app/a/com.broadlink](https://homey.app/a/com.broadlink)
 
-**App Store – Test:** https://homey.app/a/com.broadlink/test
-
-### Local and cloud control
-
-The app offers two ways to control supported RM devices:
-
-| Connection | How it works |
-| --- | --- |
-| **Local network** | Homey communicates directly with the Broadlink device. Local authentication must work and the device must permit local access. |
-| **Cloud** | Homey uses commands and functions exposed by your BroadLink or Magic Home account. Internet access is required. |
-
-Cloud remotes are added as separate Homey devices. Existing local devices and their Flows continue to work; they are not automatically converted to cloud devices.
+**App Store – Test:**
+[https://homey.app/a/com.broadlink/test](https://homey.app/a/com.broadlink/test)
 
 ### Supported devices
 
 #### Universal remote controls
 
-| Device | Connection and functions |
-| --- | --- |
-| **RM3 Mini** | Local IR; **RM3 Mini (Cloud)** for compatible BroadLink EU devices |
-| **RM3 Mini Red Bean edition** | Local IR |
-| **RM Pro / RM Pro Plus** | Local IR and RF |
-| **RM4 Mini** | Local IR; **RM4 Mini (Cloud)** |
-| **RM4 Pro** | Local IR and RF; **RM4 Pro (Cloud)** |
-| **RM5 Plus** | Local control; follow the [RM5 Plus pairing instructions and tips](https://community.homey.app/t/app-pro-broadlink-app/6389/832?u=sharkys) |
-| **RM Max** | Dedicated **RM Max** driver, with BroadLink EU or Magic Home cloud support |
+* **RM3 Mini** – IR; local and cloud drivers
 
-Cloud discovery checks supported device types. A similar product name alone does not guarantee compatibility. The RM3/RM4 cloud drivers do not include RM5 Plus or RM Max.
+* **RM3 Mini Red Bean edition** – IR
+
+* **RM Pro** – IR
+
+* **RM Pro Plus** – IR and RF
+
+* **RM4 Mini** – IR; local and cloud drivers
+
+* **RM4 Pro** – IR and RF; local and cloud drivers
+
+* **RM5 Plus** – use the [RM5 Plus pairing instructions and tips](https://community.homey.app/t/app-pro-broadlink-app/6389/832?u=sharkys)
+
+* **RM Max**, device type `0xAF8B` – use the dedicated **RM Max** driver for cloud control
 
 #### Sensors, sockets and other devices
 
 * **A1** – environment sensor
+
 * **SP1** – power socket
+
 * **SP2** – power socket with nightlight and power meter
+
 * **SP3S** – power socket with power meter
+
 * **MP1** – four-way power socket
+
 * **Hysen / Beok** – compatible OEM thermostats
+
 * **Dooya** – compatible motorized curtains
 
-Support depends on the exact hardware revision, device type and firmware.
+Support may depend on the exact hardware revision, device type and installed firmware. Devices with the same commercial name can contain different hardware.
 
 ### Cloud setup: RM3 Mini, RM4 Mini and RM4 Pro
 
@@ -97,90 +98,189 @@ For both services, learn in the vendor app and use **Refresh saved commands** in
 
 RM Max cloud control does not require successful local authentication. Magic Home control requires the cloud connection. Optional local transport is available only when compatible local credentials are supplied and Homey's local test succeeds; it is not a general RM Max unlock solution.
 
-### Local setup and device locking
+### Before pairing an RM device locally
 
-For the original local RM drivers, first configure the hub in the official Broadlink app and confirm that it works. Keep Homey and the hub on a network that permits direct communication. A DHCP reservation or fixed IP address is recommended.
+Local RM control requires successful authentication and permission for local network communication. Unlock the device where that setting is available. Cloud control uses the separate setup above; RM Max local authentication is still rejected on the tested firmware, with no working unlock method identified.
 
-Where available, open the device settings in the Broadlink app and disable **Lock device / Device lock** before pairing locally.
+In the Broadlink mobile app:
+
+1. Open the RM device.
+
+2. Open its device settings or properties.
+
+3. Find the **Lock device** or **Device lock** setting.
+
+4. Make sure the device is **unlocked**.
+
+5. Return to Homey and start pairing.
+
+The exact menu name can differ between versions of the Broadlink mobile app.
 
 [![Example of the Broadlink device-lock setting|390x500](https://us1.discourse-cdn.com/flex025/uploads/athom/original/3X/f/f/ffed901b72ccc9b8f6fa68513ea90826c09244c4.jpeg)](https://us1.discourse-cdn.com/flex025/uploads/athom/original/3X/f/f/ffed901b72ccc9b8f6fa68513ea90826c09244c4.jpeg)
 
-Some models or app versions do not offer this switch. A discovery lock flag alone does not establish whether local control will work. In particular, use the dedicated RM Max cloud setup above when local authentication is rejected.
+It is also strongly recommended to assign the Broadlink device a fixed IP address or DHCP reservation.
 
-#### Learning an IR command locally
+If Homey still cannot find or authenticate the device:
 
-1. Open the local Broadlink device in Homey and start **Learn IR command**.
-2. Point the original remote towards the hub, approximately **10–20 cm** away.
-3. Press the required remote button.
-4. Wait for confirmation that Homey stored the command, then give it a clear, unique name.
+1. Reset the Broadlink device.
 
-#### Learning an RF command locally
+2. Add it again using the official Broadlink mobile app.
 
-Compatible RM Pro, RM Pro Plus and RM4 Pro devices first detect the remote's frequency through **RF sweeping**. RM4 Pro also offers a manual frequency setting for supported frequencies.
+3. Confirm that it works in the Broadlink app.
 
-1. Keep the original remote approximately **10–20 cm** from the hub and start **Learn RF command** in Homey.
-2. Press and hold the required remote button until Homey requests the next stage or the Broadlink LED indicates that sweeping has completed.
-3. Release the button. When prompted for the actual command, briefly press it again.
-4. Wait for Homey to confirm that the command was stored.
+4. Unlock it for local network communication.
 
-Do not use only short presses during sweeping. Ordinary fixed-code remotes are the usual candidates; rolling-code or frequency-hopping remotes generally cannot be copied reliably.
+5. Add it to Homey again.
+
+### Learning an IR command locally
+
+1. Open the Broadlink device in Homey.
+
+2. Start **Learn IR command**.
+
+3. Point the original remote control towards the Broadlink device.
+
+4. Keep the remote approximately **10–20 cm** from the Broadlink device.
+
+5. Press the required button on the remote.
+
+6. Wait for Homey to confirm that the command was learned successfully.
+
+7. Give the command a clear and unique name.
+
+### Learning an RF command locally
+
+The RM Pro, RM Pro Plus and RM4 Pro first need to detect and lock onto the remote control’s RF frequency. This initial stage is called **RF sweeping**.
+
+Homey does not ask you to select the RF frequency manually. The Broadlink device searches for the transmitted frequency during the sweeping stage but for RM4 Pro, you can choose the frequency manually.
+
+To learn an RF command:
+
+1. Keep the original remote approximately **10–20 cm** from the Broadlink device.
+
+2. In Homey, start **Learn RF command**.
+
+3. Press and continuously hold the required button on the original remote.
+
+4. Keep holding the button until the LED on the Broadlink device changes or switches off. This indicates that the frequency sweep has detected and locked onto the signal.
+
+5. Release the remote button.
+
+6. Wait for the Broadlink LED to switch on again or for Homey to request the actual command.
+
+7. Briefly press the same remote button once more.
+
+8. Wait for Homey to confirm that the RF command was stored successfully.
+
+If learning fails, repeat the procedure while keeping the remote close to the Broadlink device. Do not use only short button presses during the frequency-sweeping stage.
+
+Most ordinary fixed-code RF remotes can be learned. Rolling-code or frequency-hopping remotes generally cannot be copied reliably. This commonly affects garage doors, gates, alarm systems and some security-related products.
+
+### RM4 Pro firmware compatibility
+
+Some RM4 Pro users have reported that firmware **62093** prevents local integrations from communicating with the device. Similar behaviour has also been reported by users of other local-control integrations.
+
+Before changing the firmware, first verify that:
+
+* The RM4 Pro is unlocked in the Broadlink mobile app.
+
+* Homey and the RM4 Pro are connected to the same local network.
+
+* Client isolation or guest-network isolation is disabled.
+
+* The device has been reset, configured again and unlocked.
+
+* The latest test version of the Homey app has been tried.
+
+* A diagnostic report has been submitted after a failed pairing or learning attempt.
+
+If all normal troubleshooting fails and the RM4 Pro uses an affected firmware version, firmware **62092** has been reported by the community as a possible workaround:
+
+http://124.71.130.238/RMBL4-62092-8720-BL-FC-3389.upd.bin
+
+Background information:
+
+https://www.reddit.com/r/homebridge/comments/1181ex4/caution_to_people_using_broadlink_rm_plugin/
+
+**Important:** This firmware file and downgrade procedure are not provided or officially supported by the Homey app developer. Installing or downgrading firmware can make the device unusable, introduce security risks or void its warranty. Use it only as a last resort and entirely at your own risk. Never interrupt the device’s power supply during a firmware update.
 
 ### Troubleshooting and support
 
-For pairing, configuration and normal support, please use this topic.
-
-**For local control:** check the current IP address, local-access lock setting where present, network/client isolation and authentication. Firmware can affect local access. Try the current test app and send diagnostics before considering a reset or firmware changes. Cloud support does not require a firmware downgrade.
-
-**For cloud control:** check Internet access, the selected service/account/region and whether the official app can operate the appliance over mobile data. Refresh the saved commands after vendor-app edits. Use Repair when Homey reports an authorization problem.
-
-Each cloud device processes one operation at a time and can hold up to three waiting operations. Rapid presses can therefore show a queue warning. An expired/full queue is reported; failed or uncertain sends are not automatically repeated.
+For normal support, pairing questions and configuration help, please use this Homey Community topic.
 
 When reporting a problem, include:
 
-* Exact product name, device type/model ID and Broadlink firmware version
-* Homey model, Homey firmware and Broadlink Homey app version
-* The Homey driver and whether you use local control, BroadLink EU or Magic Home
-* Whether the official app works, and which buttons or operations fail
-* The displayed error and a precise description of what happens
-* For local access, the lock state if known
+* The exact Broadlink product name
 
-Send a **Homey diagnostic report immediately after reproducing the problem** and include its report ID. For RF learning, include the complete sweeping and capture attempt. Please do not post passwords, verification/authorization codes or account tokens.
+* The device type or model ID, if available
 
-GitHub is for confirmed application bugs and development requests: https://github.com/shaarkys/com.broadlink/issues
+* The installed Broadlink firmware version
 
-Please check for an existing report before opening a new issue.
+* The installed Homey app version
+
+* Your Homey model and firmware version
+
+* Whether the device is unlocked
+
+* Whether it works in the official Broadlink app
+
+* A precise description of what happens
+
+* Any displayed error message
+
+Please also send a **diagnostic report from the Broadlink app on Homey immediately after reproducing the problem** and include its diagnostic report ID in your post.
+
+For RF-learning problems, submit the diagnostic report while or immediately after performing the complete RF-learning procedure, including the frequency-sweeping stage.
+
+GitHub is intended for confirmed application bugs and development-related requests, not as the primary support channel:
+
+https://github.com/shaarkys/com.broadlink/issues
+
+Before opening a new issue, please check whether the same problem has already been reported.
 
 ### Credits
 
-This app builds on several open-source projects and contributors, with development assistance from ChatGPT. Special thanks to the previous developer, [Remko](https://community.homey.app/u/Remko), for his work on the original application. :heavy_heart_exclamation:
+This app builds on the work of several open-source projects and contributors. The current application has also been developed with assistance from ChatGPT.
+
+Special thanks to the previous developer, [Remko](https://community.homey.app/u/Remko), for his work on the original application. :heavy_heart_exclamation:
+
+References and related projects:
 
 * https://github.com/mjg59/python-broadlink
+
 * https://github.com/davorf/BlackBeanControl
+
 * https://github.com/frankjoke/ioBroker.broadlink2
+
 * https://github.com/lprhodes/homebridge-broadlink-rm/tree/master/helpers
+
 * http://peter.windridge.org.uk/playing-with-cheap-iot-devices
+
 * https://blog.ipsumdomus.com/broadlink-smart-home-devices-complete-protocol-hack-bc0b4b397af1
 
 ### Support the development
 
-These Homey Community apps are developed and maintained in my spare time. If this app has been useful to you, you can optionally support the development, testing and ongoing maintenance:
+## ❤️ Community apps and appreciation
 
-**[☕ Support me on Ko-fi](https://ko-fi.com/bretislavkubesa)** · **[❤️ PayPal](https://www.paypal.me/bkubesa)**
+These Homey Community apps are developed and maintained in my spare time.
 
-Contributions are never required and do not unlock features or affect the support you receive. They are simply a way to say thank you.
+**Did you know?** In my experience maintaining community Homey apps, only a very small proportion of users choose to support their development financially—even when a new device integration or specific feature has been implemented at their request.
+
+Contributions are never required, but they are a meaningful way to recognise the time invested in development, testing, compatibility updates and ongoing user support. If one of my apps has been useful to you, you can optionally show your appreciation here:
+
+
+### [❤️ Send an optional thank-you via PayPal](https://www.paypal.me/bkubesa)
+
+### [☕ Support the development on Ko-fi](https://ko-fi.com/bretislavkubesa)
+
+A contribution does not unlock additional features or affect the support you receive. It is simply a way to say *thank you*.
 
 ### My Homey apps
 
-| App | Purpose |
-| --- | --- |
-| [Smart Presence](https://homey.app/a/nl.terryhendrix.smartpresence) | Wi-Fi presence detection |
-| [Xiaomi Mi Home](https://homey.app/a/com.xiaomi-miio) | Xiaomi Mi Home devices |
-| [Broadlink](https://homey.app/a/com.broadlink) | IR, RF and smart devices |
-| [TP-Link KASA LAN](https://homey.app/a/nu.baretta.tplink) | Local Kasa control |
-| [Yeelights LAN](https://homey.app/a/com.yeelight) | Local Yeelight control |
-| [Xiaomi Miija](https://homey.app/a/hu.corenet.mitemp) | Temperature and humidity sensors |
-| [Octoprint](https://homey.app/a/no.jonkristian.octoprint) | Monitor your 3D printer |
-| [Virtual Radar](https://homey.app/a/com.gruijter.virtualradar) | ADS-B aircraft tracking |
-| [enigma2](https://homey.app/a/eu.carp3-noctem.enigma2) | Control Enigma2 receivers |
+| | | |
+| :---: | :---: | :---: |
+| [![Smart Presence\|72x72](upload://cbTaORH5Euje8FnwJNhiUgknLqN.png)](https://homey.app/a/nl.terryhendrix.smartpresence)<br>[**Smart Presence**](https://homey.app/a/nl.terryhendrix.smartpresence)<br><small>Wi-Fi presence detection</small> | [![Xiaomi Mi Home\|72x72](upload://vGVMmWT6hI6NB9iFcGkWKuuHdqK.jpeg)](https://homey.app/a/com.xiaomi-miio)<br>[**Xiaomi Mi Home**](https://homey.app/a/com.xiaomi-miio)<br><small>Xiaomi Mi Home devices</small> | [![Broadlink\|72x72](upload://gPZprfR6ohSVfS8IyaOkhc05rQY.jpeg)](https://homey.app/a/com.broadlink)<br>[**Broadlink**](https://homey.app/a/com.broadlink)<br><small>IR, RF and smart devices</small> |
+| [![TP-Link KASA LAN\|72x72](upload://srGOWaNZXIlgTzJbSRKuGl5WtTg.png)](https://homey.app/a/nu.baretta.tplink)<br>[**TP-Link KASA LAN**](https://homey.app/a/nu.baretta.tplink)<br><small>Local Kasa control</small> | [![Yeelights LAN\|72x72](upload://3ZgvzCuCctH0utILiEtsgp6jG4o.jpeg)](https://homey.app/a/com.yeelight)<br>[**Yeelights LAN**](https://homey.app/a/com.yeelight)<br><small>Local Yeelight control</small> | [![Xiaomi Miija\|72x72](upload://lxQPCx72qDtw7ytZBKXvSEdnaTY.png)](https://homey.app/a/hu.corenet.mitemp)<br>[**Xiaomi Miija**](https://homey.app/a/hu.corenet.mitemp)<br><small>Temperature and humidity sensors</small> |
+| [![Octoprint\|72x72](upload://eWVQitmZAZEIDTGmMhdXtpQklaU.png)](https://homey.app/a/no.jonkristian.octoprint)<br>[**Octoprint**](https://homey.app/a/no.jonkristian.octoprint)<br><small>Monitor your 3D printer</small> | [![Virtual Radar\|72x72](upload://mC2LyArn9YiDhK9186TduBgHV1a.jpeg)](https://homey.app/a/com.gruijter.virtualradar)<br>[**Virtual Radar**](https://homey.app/a/com.gruijter.virtualradar)<br><small>ADS-B aircraft tracking</small> | [![enigma2\|72x72](upload://jwDe5F3KQqsm1nYZVjBRnzm1noI.png)](https://homey.app/a/eu.carp3-noctem.enigma2)<br>[**enigma2**](https://homey.app/a/eu.carp3-noctem.enigma2)<br><small>Control Enigma2 receivers</small> |
 
 [**View all my Homey apps →**](https://homey.app/en-us/apps/author/5cc0b0a87a00d60e7682a494/page/0/)
