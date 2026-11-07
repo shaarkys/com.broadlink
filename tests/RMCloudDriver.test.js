@@ -791,7 +791,7 @@ test('real cloud short-ack parsing completes controls, power values and sent-com
   await d.listeners.onoff(true); await d.listeners.volume_up(); await d.listeners.onoff(false);
   assert.deepEqual(observed, [true, true, false]);
   assert.equal(d.values.onoff, false); assert.equal(d.device.unavailable, false);
-  assert.equal(d.values.rmmax_status, 'Command acknowledged via cloud');
+  assert.equal(d.values.rmmax_status, 'Cloud accepted');
   assert.equal(requests, 3); assert.equal(state.sends.length, 3);
   assert.deepEqual(state.sends.map(sent => sent.code), [rows[0].codeList[0].code, rows[2].codeList[0].code, rows[1].codeList[0].code]);
   await d.device.onUninit(); x.driver.onUninit();
