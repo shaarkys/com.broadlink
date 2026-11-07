@@ -24,7 +24,7 @@ const BroadlinkDevice = require('./../../lib/BroadlinkDevice');
 class DooyaDevice extends BroadlinkDevice {
 
 	async onInit() {
-		await super.onInit();
+		if (await super.onInit() === false || this._localStopped) return false;
 		this.registerCapabilityListener('button.open', this.onCapabilityOpen.bind(this));
 		this.registerCapabilityListener('button.close', this.onCapabilityClose.bind(this));
 		this.registerCapabilityListener('button.stop', this.onCapabilityStop.bind(this));
@@ -37,19 +37,24 @@ class DooyaDevice extends BroadlinkDevice {
 		}
 	}
 
-	_set_state(closedState) {
+	async _set_state(closedState) {
+		const previousState = this._get_state();
+		// Keep the acknowledged command state even if Homey cannot store it.
+		this.windowcoverings_closed = closedState;
 		if (this.getCapabilities().indexOf('windowcoverings_closed') > -1) {
-			this.setCapabilityValue('windowcoverings_closed', closedState)
+			try {
+				await this.setCapabilityValue('windowcoverings_closed', closedState);
+			} catch (err) {
+				this.error('Dooya command acknowledged; Homey capability update failed', err);
+			}
 		}
-		else {
+		if (closedState !== previousState) {
 			let drv = this.driver;
-			if (closedState) {
-				drv.trigger_closed.trigger(this, {}, {})
+			try {
+				await (closedState ? drv.trigger_closed : drv.trigger_open).trigger(this, {}, {});
+			} catch (err) {
+				this.error('Dooya command acknowledged; Homey Flow trigger failed', err);
 			}
-			else {
-				drv.trigger_open.trigger(this, {}, {})
-			}
-			this.windowcoverings_closed = closedState
 		}
 	}
 
@@ -57,6 +62,7 @@ class DooyaDevice extends BroadlinkDevice {
 	 * @return TRUE if 'closed', FALSE if 'open'  
 	 */
 	_get_state() {
+		if (this.windowcoverings_closed !== undefined) return this.windowcoverings_closed;
 		if (this.getCapabilities().indexOf('windowcoverings_closed') > -1) {
 			return this.getCapabilityValue('windowcoverings_closed')
 		}
@@ -70,16 +76,16 @@ class DooyaDevice extends BroadlinkDevice {
 		return Promise.resolve(this._get_state())
 	}
 
-	do_action_close() {
-		this._set_state(true)
-		this._sendCommand(0x02, 0x00);
-		return Promise.resolve(true)
+	async do_action_close() {
+		await this._sendCommand(0x02, 0x00);
+		await this._set_state(true);
+		return true;
 	}
 
-	do_action_open() {
-		this._set_state(false)
-		this._sendCommand(0x01, 0x00);
-		return Promise.resolve(true)
+	async do_action_open() {
+		await this._sendCommand(0x01, 0x00);
+		await this._set_state(false);
+		return true;
 	}
 
 	do_action_toggle() {
@@ -102,30 +108,26 @@ class DooyaDevice extends BroadlinkDevice {
 			let res = await this._communicate.dooya_set_state(cmd1, cmd2);
 			return res
 		}
-		catch (err) { this._utils.debugLog(this, "**> DooyaDevice._sendCommand " + cmd1 + "." + cmd2 + ": error = " + err); }
+		catch (err) {
+			this._utils.debugLog(this, "**> DooyaDevice._sendCommand " + cmd1 + "." + cmd2 + ": error = " + err);
+			throw err;
+		}
 	}
 
 	async onCapabilityWcClosed(state) {
-		if (state) {
-			this._sendCommand(0x01, 0x00);
-		}
-		else {
-			this._sendCommand(0x02, 0x00);
-		}
+		return state ? this.do_action_close() : this.do_action_open();
 	}
 
 	async onCapabilityOpen(state) {
-		this._set_state(false)
-		this._sendCommand(0x01, 0x00);
+		return this.do_action_open();
 	}
 
 	async onCapabilityClose(state) {
-		this._set_state(true)
-		this._sendCommand(0x02, 0x00);
+		return this.do_action_close();
 	}
 
 	async onCapabilityStop(state) {
-		this._sendCommand(0x03, 0x00);
+		return this._sendCommand(0x03, 0x00);
 	}
 
 	async get_percentage(self) {

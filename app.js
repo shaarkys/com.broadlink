@@ -139,7 +139,7 @@ class BroadlinkApp extends Homey.App {
 
   registerApiRoutes(api) {
     if (!api) {
-      this._logRfManagerDebug("App API not available; RF command manager is using settings storage");
+      this._utils.debugLog(null, "App API not available; RF command manager is using settings storage");
       return false;
     }
 

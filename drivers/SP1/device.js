@@ -24,26 +24,33 @@ const BroadlinkDevice = require('./../../lib/BroadlinkDevice');
 class SP1Device extends BroadlinkDevice {
 
 
-	generate_trigger(mode) {
+	async generate_trigger(mode) {
 		if (mode != this.getCapabilityValue('onoff')) {
 			let drv = this.driver;
-			drv.trigger_toggle.trigger(this, {}, {})
-			if (mode) {
-				drv.trigger_on.trigger(this, {}, {})
-			}
-			else {
-				drv.trigger_off.trigger(this, {}, {})
-			}
+			await Promise.all([
+				drv.trigger_toggle.trigger(this, {}, {}),
+				(mode ? drv.trigger_on : drv.trigger_off).trigger(this, {}, {}),
+			]);
 		}
 	}
 
 	async set_onoff(mode) {
-		this.generate_trigger(mode)
 		try {
 			await this._communicate.sp1_set_power_state(mode)
         } catch (e) {
             this.error('Error in set_onoff', e);
+			throw e;
         }
+		try {
+			await this.generate_trigger(mode);
+		} catch (err) {
+			this.error('SP1 command acknowledged; Homey Flow trigger failed', err);
+		}
+		try {
+			await this.setCapabilityValue('onoff', mode);
+		} catch (err) {
+			this.error('SP1 command acknowledged; Homey capability update failed', err);
+		}
 	}
 
 	check_condition_on() {
@@ -51,25 +58,22 @@ class SP1Device extends BroadlinkDevice {
 		return Promise.resolve(onoff)
 	}
 
-	do_action_on() {
-		this.set_onoff(true);
-		this.setCapabilityValue('onoff', true);
-		return Promise.resolve(true)
+	async do_action_on() {
+		await this.set_onoff(true);
+		return true;
 	}
 
-	do_action_off() {
-		this.set_onoff(false);
-		this.setCapabilityValue('onoff', false);
-		return Promise.resolve(true)
+	async do_action_off() {
+		await this.set_onoff(false);
+		return true;
 	}
 
 	onCapabilityOnOff(mode) {
-		this.set_onoff(mode)
-		return Promise.resolve();
+		return this.set_onoff(mode);
 	}
 
 	async onInit() {
-		await super.onInit();
+		if (await super.onInit() === false || this._localStopped) return false;
 		this._utils.debugLog(this, "SP1 Device onInit called");
 		this.registerCapabilityListener('onoff', this.onCapabilityOnOff.bind(this));
 	}

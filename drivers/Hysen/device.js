@@ -43,14 +43,20 @@ const ROOM_TEMP_ADJUST_MIN = -5.0;
 const ROOM_TEMP_ADJUST_MAX = 5.0;
 
 class HysenDevice extends BroadlinkDevice {
+  _isHysenActive(generation = this._hysenGeneration) {
+    return !this._hysenStopped && generation === this._hysenGeneration;
+  }
+
   /**
    *
    */
   async onCheckInterval() {
+    const generation = this._hysenGeneration;
+    if (!this._isHysenActive(generation)) return;
     this._utils.debugLog(this, "onCheckInterval called");
     try {
-      await this.get_temperature();
-      await this.get_full_status();
+      await this.get_temperature(generation);
+      if (this._isHysenActive(generation)) await this.get_full_status(generation);
     } catch (err) {
       this._utils.debugLog(this, "**> onCheckInterval error: " + err);
     }
@@ -61,18 +67,15 @@ class HysenDevice extends BroadlinkDevice {
   }
 
   async do_action_parentalmode_on() {
-    this.data["ParentalMode"] = true;
-    await this.set_power(this.data["power"], true);
-    this.setCapabilityValue("parental_mode", true);
+    return this.onCapabilityParentalMode(true);
   }
 
   async do_action_parentalmode_off() {
-    this.data["ParentalMode"] = false;
-    await this.set_power(this.data["power"], false);
-    this.setCapabilityValue("parental_mode", false);
+    return this.onCapabilityParentalMode(false);
   }
 
-  async _trigger_parentalmode() {
+  async _trigger_parentalmode(generation = this._hysenGeneration) {
+    if (!this._isHysenActive(generation)) return;
     try {
       let drv = this.driver;
       if (this.data["ParentalMode"]) {
@@ -80,31 +83,37 @@ class HysenDevice extends BroadlinkDevice {
       } else {
         await drv.trigger_parentalmode_off.trigger(this, {}, {});
       }
-      await drv.trigger_parentalmode_toggle.trigger(this, {}, {});
+      if (this._isHysenActive(generation)) await drv.trigger_parentalmode_toggle.trigger(this, {}, {});
     } catch (err) {
-      this._utils.debugLog(this, "**> hysen._trigger_parentalmode: error = " + err);
+      this.error("Thermostat parental Homey Flow trigger failed", err);
     }
   }
 
-  _updateCapabilities() {
-    this.setCapabilityValue("measure_temperature", this.data["RoomTemperature"]);
+  async _updateCapabilities(generation = this._hysenGeneration) {
+    if (!this._isHysenActive(generation)) return;
+    await this.setCapabilityValue("measure_temperature", this.data["RoomTemperature"]);
+    if (!this._isHysenActive(generation)) return;
 
     if (this.getCapabilities().indexOf("measure_temperature.room") > -1) {
-      this.setCapabilityValue("measure_temperature.room", this.data["RoomTemperature"]);
+      await this.setCapabilityValue("measure_temperature.room", this.data["RoomTemperature"]);
     }
+    if (!this._isHysenActive(generation)) return;
     if (this.getCapabilities().indexOf("measure_temperature.outside") > -1) {
-      this.setCapabilityValue("measure_temperature.outside", this.data["ExternalTemperature"]);
+      await this.setCapabilityValue("measure_temperature.outside", this.data["ExternalTemperature"]);
     }
+    if (!this._isHysenActive(generation)) return;
     if (this.data["TargetTemperature"]) {
-      this.setCapabilityValue("target_temperature", this.data["TargetTemperature"]);
+      await this.setCapabilityValue("target_temperature", this.data["TargetTemperature"]);
     }
+    if (!this._isHysenActive(generation)) return;
     if (this.data["ParentalMode"] !== this.getCapabilityValue("parental_mode")) {
-      this._trigger_parentalmode();
-      this.setCapabilityValue("parental_mode", !!this.data["ParentalMode"]);
+      await this._trigger_parentalmode(generation);
+      if (this._isHysenActive(generation)) await this.setCapabilityValue("parental_mode", !!this.data["ParentalMode"]);
     }
   }
 
-  _updateAllSettings() {
+  async _updateAllSettings(generation = this._hysenGeneration) {
+    if (!this._isHysenActive(generation)) return;
     let newSettings = {};
 
     if (this.data["TempRangeExtSensor"]) {
@@ -153,7 +162,7 @@ class HysenDevice extends BroadlinkDevice {
     newSettings["weekendtemp2"] = this.data["schedule"][7]["temp"];
 
     if (Object.keys(newSettings).length > 0) {
-      this.setSettings(newSettings);
+      await this.setSettings(newSettings);
     }
   }
 
@@ -181,7 +190,7 @@ class HysenDevice extends BroadlinkDevice {
   _isValidTime(dayname, changedKeysArr, newSettingsObj) {
     try {
       if (changedKeysArr.indexOf(dayname) >= 0) {
-        if (newSettingsObj[dayname].length != 5) {
+        if (!/^\d{2}:\d{2}$/.test(newSettingsObj[dayname])) {
           return false;
         }
         if (newSettingsObj[dayname][2] != ":") {
@@ -208,87 +217,76 @@ class HysenDevice extends BroadlinkDevice {
    * Called when the device settings are changed by the user
    * (so NOT called on programmatically changing settings)
    *
-   *  @param changedKeysArr   contains an array of keys that have been changed
+   *  @param event   SDK v3 settings event
    */
-  async onSettings(oldSettingsObj, newSettingsObj, changedKeysArr, callback) {
-    super.onSettings(oldSettingsObj, newSettingsObj, changedKeysArr, undefined);
-    let changed = false;
-
-    // sanity check
-    let upperlimit = this.data["SensorUpperLimit"];
-    let lowerlimit = this.data["SensorLowerLimit"];
-    if (changedKeysArr.indexOf("SensorUpperLimit") >= 0) {
-      upperlimit = newSettingsObj["SensorUpperLimit"];
+  async onSettings({ oldSettings, newSettings, changedKeys }) {
+    const generation = this._hysenGeneration;
+    if (!this._isHysenActive(generation)) throw new Error("Thermostat device has been stopped");
+    const upperlimit = newSettings.SensorUpperLimit ?? this.data.SensorUpperLimit;
+    const lowerlimit = newSettings.SensorLowerLimit ?? this.data.SensorLowerLimit;
+    if (changedKeys.some((key) => key === "SensorUpperLimit" || key === "SensorLowerLimit")
+      && (!Number.isFinite(upperlimit) || !Number.isFinite(lowerlimit) || upperlimit <= lowerlimit)) {
+      throw new Error(this.homey.__("errors.invalid_sensor_limits"));
     }
-    if (changedKeysArr.indexOf("SensorLowerLimit") >= 0) {
-      lowerlimit = newSettingsObj["SensorLowerLimit"];
+    const dayNames = ["weekday1", "weekday2", "weekday3", "weekday4", "weekday5", "weekday6", "weekend1", "weekend2"];
+    const tempNames = ["weekdaytemp1", "weekdaytemp2", "weekdaytemp3", "weekdaytemp4", "weekdaytemp5", "weekdaytemp6", "weekendtemp1", "weekendtemp2"];
+    if (dayNames.some((name) => !this._isValidTime(name, changedKeys, newSettings))) {
+      throw new Error(this.homey.__("errors.invalid_schedule_time"));
     }
-    if (upperlimit <= lowerlimit) {
-      callback(this.homey.__("errors.invalid_sensor_limits"));
-      return;
+    const advancedKeys = ["TempRangeExtSensor", "SensorMode", "RoomTempAdjust", "AutoMode", "LoopMode", "FloorTempDeadZone", "SensorUpperLimit", "SensorLowerLimit", "AntiFreezeMode"];
+    const advancedChanged = advancedKeys.some((key) => changedKeys.includes(key));
+    const scheduleChanged = [...dayNames, ...tempNames].some((key) => changedKeys.includes(key));
+    if ((advancedChanged || scheduleChanged) && !this.data.schedule) {
+      throw new Error("Thermostat status is not available yet; retry after its first update");
     }
-
-    if (!this._isValidTime("weekday1", changedKeysArr, newSettingsObj) || !this._isValidTime("weekday2", changedKeysArr, newSettingsObj) || !this._isValidTime("weekday3", changedKeysArr, newSettingsObj) || !this._isValidTime("weekday4", changedKeysArr, newSettingsObj) || !this._isValidTime("weekday5", changedKeysArr, newSettingsObj) || !this._isValidTime("weekday6", changedKeysArr, newSettingsObj) || !this._isValidTime("weekend1", changedKeysArr, newSettingsObj) || !this._isValidTime("weekend2", changedKeysArr, newSettingsObj)) {
-      callback(this.homey.__("errors.invalid_schedule_time"));
-      return;
+    const nextData = { ...this.data };
+    for (const key of advancedKeys) {
+      if (changedKeys.includes(key)) nextData[key] = newSettings[key];
     }
-
-    // Update Interval
-    if (changedKeysArr.indexOf("CheckInterval") >= 0) {
+    if (scheduleChanged) {
+      nextData.schedule = this.data.schedule.map((entry) => ({ ...entry }));
+      for (let i = 0; i < dayNames.length; i++) {
+        if (changedKeys.includes(dayNames[i])) nextData.schedule[i].time = newSettings[dayNames[i]];
+        if (changedKeys.includes(tempNames[i])) nextData.schedule[i].temp = Number(newSettings[tempNames[i]]);
+      }
+    }
+    if (changedKeys.includes("ipAddress")) this._communicate.setIPaddress(newSettings.ipAddress);
+    if (changedKeys.includes("Authenticate") && newSettings.Authenticate) {
+      const deviceData = this.getData();
+      this._communicate.configure({
+        ipAddress: newSettings.ipAddress,
+        mac: this._utils.hexToArr(deviceData.mac),
+        count: Math.floor(Math.random() * 0xffff),
+        id: null,
+        key: null,
+        homey: this.homey,
+        deviceType: Number(deviceData.devtype),
+      });
+      await this.authenticateDevice();
+      if (!this._isHysenActive(generation)) return;
+    }
+    if (advancedChanged) {
+      await this.set_advanced(Number(nextData.LoopMode), Number(nextData.AutoMode), Number(nextData.SensorMode), nextData.TempRangeExtSensor, nextData.FloorTempDeadZone, nextData.SensorUpperLimit, nextData.SensorLowerLimit, nextData.RoomTempAdjust, Number(nextData.AntiFreezeMode), nextData.poweron);
+      if (!this._isHysenActive(generation)) return;
+    }
+    if (scheduleChanged) {
+      await this.set_schedule(nextData.schedule);
+      if (!this._isHysenActive(generation)) return;
+    }
+    if (advancedChanged || scheduleChanged) this.data = nextData;
+    if (changedKeys.includes("CheckInterval")) {
       this.stop_check_interval();
-      this.start_check_interval(newSettingsObj["CheckInterval"]);
+      this.start_check_interval(newSettings.CheckInterval);
     }
-
-    // Device settings
-    changed |= this._updateSetting("TempRangeExtSensor", changedKeysArr, newSettingsObj);
-    changed |= this._updateSetting("SensorMode", changedKeysArr, newSettingsObj); // string: needs Number(x)
-    changed |= this._updateSetting("RoomTempAdjust", changedKeysArr, newSettingsObj);
-    changed |= this._updateSetting("AutoMode", changedKeysArr, newSettingsObj); // string
-    changed |= this._updateSetting("LoopMode", changedKeysArr, newSettingsObj); // string
-    changed |= this._updateSetting("FloorTempDeadZone", changedKeysArr, newSettingsObj);
-    changed |= this._updateSetting("SensorUpperLimit", changedKeysArr, newSettingsObj);
-    changed |= this._updateSetting("SensorLowerLimit", changedKeysArr, newSettingsObj);
-    changed |= this._updateSetting("AntiFreezeMode", changedKeysArr, newSettingsObj); // string
-    changed |= this._updateSchedule("weekday1", "weekdaytemp1", 0, changedKeysArr, newSettingsObj);
-    changed |= this._updateSchedule("weekday2", "weekdaytemp2", 1, changedKeysArr, newSettingsObj);
-    changed |= this._updateSchedule("weekday3", "weekdaytemp3", 2, changedKeysArr, newSettingsObj);
-    changed |= this._updateSchedule("weekday4", "weekdaytemp4", 3, changedKeysArr, newSettingsObj);
-    changed |= this._updateSchedule("weekday5", "weekdaytemp5", 4, changedKeysArr, newSettingsObj);
-    changed |= this._updateSchedule("weekday6", "weekdaytemp6", 5, changedKeysArr, newSettingsObj);
-    changed |= this._updateSchedule("weekend1", "weekendtemp1", 6, changedKeysArr, newSettingsObj);
-    changed |= this._updateSchedule("weekend2", "weekendtemp2", 7, changedKeysArr, newSettingsObj);
-
-    if (changed) {
-      /*await*/ this.set_advanced(Number(this.data["LoopMode"]), Number(this.data["AutoMode"]), Number(this.data["SensorMode"]), this.data["TempRangeExtSensor"], this.data["FloorTempDeadZone"], this.data["SensorUpperLimit"], this.data["SensorLowerLimit"], this.data["RoomTempAdjust"], Number(this.data["AntiFreezeMode"]), this.data["poweron"]);
-
-      //		await this.set_mode( Number(this.data['AutoMode']), Number(this.data['LoopMode']) /*, sensor*/ );
-
-      /*await*/ this.set_schedule(this.data["schedule"]);
-    }
-
-    // Device clock
-    if (changedKeysArr.indexOf("AdjustClock") >= 0) {
-      let d = new Date();
-      let day = d.getDay();
-      if (day == 0) {
-        day = 7;
-      } // sunday = 7, not 0
-      await this.set_time(d.getHours(), d.getMinutes(), d.getSeconds(), day);
-      d = undefined;
-
-      setTimeout(
-        function (d) {
-          this.setSettings({ AdjustClock: false });
-        }.bind(this),
-        2000
-      ); // timeout in [msec]
-    }
-
-    if (callback) {
-      /* only do callback if this functions was called by Homey.
-       * if it was called by another class, that class will do the callback.
-       */
-      callback(null, true);
+    if (changedKeys.includes("AdjustClock") && newSettings.AdjustClock) {
+      const date = new Date();
+      await this.set_time(date.getHours(), date.getMinutes(), date.getSeconds(), date.getDay() || 7);
+      if (!this._isHysenActive(generation)) return;
+      if (this._clockResetTimeout != null) this.homey.clearTimeout(this._clockResetTimeout);
+      this._clockResetTimeout = this.homey.setTimeout(() => {
+        this._clockResetTimeout = null;
+        if (this._isHysenActive(generation)) this.setSettings({ AdjustClock: false }).catch((err) => this.error("Resetting thermostat clock setting failed", err));
+      }, 2000);
     }
   }
 
@@ -322,10 +320,11 @@ class HysenDevice extends BroadlinkDevice {
   /**
    * Get current room temperature in degrees celsius
    */
-  async get_temperature() {
+  async get_temperature(generation = this._hysenGeneration) {
     try {
       var payload = new Uint8Array([0x01, 0x03, 0x00, 0x00, 0x00, 0x08]);
       var response = await this.send_request(payload);
+      if (!this._isHysenActive(generation)) return;
 
       //this._utils.debugLog(this, "==> hysen.get_temperature: " + this._utils.asHex(response))
 
@@ -333,7 +332,7 @@ class HysenDevice extends BroadlinkDevice {
       this.data["TargetTemperature"] = response[6] / 2.0;
       this.data["ExternalTemperature"] = response[18] / 2.0;
 
-      this._updateCapabilities();
+      await this._updateCapabilities(generation);
     } catch (err) {
       this._utils.debugLog(this, "**> hysen.get_temperature - catch = " + err);
     }
@@ -342,10 +341,11 @@ class HysenDevice extends BroadlinkDevice {
   /**
    * Get full status (including timer schedule)
    */
-  async get_full_status() {
+  async get_full_status(generation = this._hysenGeneration) {
     try {
       var payload = new Uint8Array([0x01, 0x03, 0x00, 0x00, 0x00, 0x16]);
       var response = await this.send_request(payload);
+      if (!this._isHysenActive(generation)) return;
 
       this._utils.debugLog(this, "==> hysen.get_full_status - " + this._utils.asHex(response));
 
@@ -415,8 +415,8 @@ class HysenDevice extends BroadlinkDevice {
       }
       this.data["schedule"] = schedule;
 
-      this._updateCapabilities();
-      this._updateAllSettings();
+      await this._updateCapabilities(generation);
+      if (this._isHysenActive(generation)) await this._updateAllSettings(generation);
     } catch (err) {
       this._utils.debugLog(this, "**> hysen.get_full_status - catch = " + err);
     }
@@ -447,6 +447,7 @@ class HysenDevice extends BroadlinkDevice {
       await this.send_request(payload);
     } catch (err) {
       this._utils.debugLog(this, "**> hysen.set_mode: catch = " + err);
+      throw err;
     }
   }
 
@@ -508,6 +509,7 @@ class HysenDevice extends BroadlinkDevice {
       await this.send_request(payload);
     } catch (err) {
       this._utils.debugLog(this, "**> hysen.set_advanced: catch = " + err);
+      throw err;
     }
   }
 
@@ -520,6 +522,7 @@ class HysenDevice extends BroadlinkDevice {
       await this.send_request(payload);
     } catch (err) {
       this._utils.debugLog(this, "**> hysen.set_target_temperature: catch = " + err);
+      throw err;
     }
   }
 
@@ -533,6 +536,7 @@ class HysenDevice extends BroadlinkDevice {
       await this.send_request(payload);
     } catch (err) {
       this._utils.debugLog(this, "**> hysen.set_power: catch = " + err);
+      throw err;
     }
   }
 
@@ -550,6 +554,7 @@ class HysenDevice extends BroadlinkDevice {
       await this.send_request(payload);
     } catch (err) {
       this._utils.debugLog(this, "**> hysen.set_time: catch = " + err);
+      throw err;
     }
   }
 
@@ -587,33 +592,55 @@ class HysenDevice extends BroadlinkDevice {
       await this.send_request(this._utils.concatTypedArrays(input_payload, payload));
     } catch (err) {
       this._utils.debugLog(this, "**> hysen.set_schedule: catch = " + err);
+      throw err;
     }
   }
 
   async onCapabilityTargetTemperature(temp) {
-    this.data["TargetTemperature"] = temp;
+    const generation = this._hysenGeneration;
     await this.set_target_temperature(temp);
+    if (this._isHysenActive(generation)) this.data["TargetTemperature"] = temp;
   }
 
   async onCapabilityParentalMode(mode) {
-    this.data["ParentalMode"] = !!mode; // Force boolean
-    await this.set_power(this.data["power"], this.data["ParentalMode"]);
-    this._trigger_parentalmode();
+    const generation = this._hysenGeneration;
+    if (this.data["power"] !== 0 && this.data["power"] !== 1) {
+      throw new Error("Thermostat power state is not available yet; retry after its first update");
+    }
+    const parentalMode = !!mode;
+    await this.set_power(this.data["power"], parentalMode);
+    if (!this._isHysenActive(generation)) return;
+    this.data["ParentalMode"] = parentalMode;
+    const changed = parentalMode !== this.getCapabilityValue("parental_mode");
+    try {
+      await this.setCapabilityValue("parental_mode", parentalMode);
+    } catch (err) {
+      this.error("Thermostat parental command acknowledged; Homey capability update failed", err);
+    }
+    if (changed && this._isHysenActive(generation)) await this._trigger_parentalmode(generation);
   }
 
   async onInit() {
+    if (this._communicate) await this.onUninit();
+    const generation = this._hysenGeneration = (this._hysenGeneration || 0) + 1;
+    this._hysenStopped = false;
     try {
-      await super.onInit();
+      if (await super.onInit() === false || this._localStopped) return false;
+      if (!this._isHysenActive(generation)) return;
       this.data = {};
       this.registerCapabilityListener("target_temperature", this.onCapabilityTargetTemperature.bind(this));
       this.registerCapabilityListener("parental_mode", this.onCapabilityParentalMode.bind(this));
 
       // Initial data fetch after a 4-second delay
-      setTimeout(
+      this._startupTimeout = this.homey.setTimeout(
         async function () {
+          if (!this._isHysenActive(generation)) return;
+          this._startupTimeout = null;
           try {
-            await this.get_full_status();
-            await this.get_temperature();
+            await this.get_full_status(generation);
+            if (!this._isHysenActive(generation)) return;
+            await this.get_temperature(generation);
+            if (!this._isHysenActive(generation)) return;
 
             // Start periodic updates after initial fetch
             const checkInterval = this.getSettings().CheckInterval || 5; // Default to 5 minutes if not set
@@ -633,9 +660,18 @@ class HysenDevice extends BroadlinkDevice {
    * This method will be called when a device has been removed.
    */
   onDeleted() {
-    super.onDeleted();
+    return this.onUninit();
+  }
+
+  onUninit() {
+    this._hysenStopped = true;
+    this._hysenGeneration = (this._hysenGeneration || 0) + 1;
+    if (this._startupTimeout != null) this.homey.clearTimeout(this._startupTimeout);
+    if (this._clockResetTimeout != null) this.homey.clearTimeout(this._clockResetTimeout);
+    this._startupTimeout = null;
+    this._clockResetTimeout = null;
     this.data = undefined;
-    this.stop_check_interval(); // Ensure the timer is stopped
+    return super.onUninit();
   }
 }
 

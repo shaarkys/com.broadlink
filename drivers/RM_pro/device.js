@@ -22,79 +22,78 @@ const RM3MiniDevice = require("./../RM3_mini/device");
 
 class RmProDevice extends RM3MiniDevice {
   async onInit() {
-    await super.onInit();
+    if (await super.onInit() === false || this._localStopped) return false;
     this.learn = false;
     this._utils.debugLog(this, "RMPro device onInit called");
     this.registerCapabilityListener("learnRFcmd", this.onCapabilityLearnRF.bind(this));
   }
 
-  async stopRfLearning() {
+  async stopRfLearning(session = this._learningSession()) {
+    session?.assert();
     try {
       await this._communicate.cancelRFSweep();
     } catch (e) {
       this._utils.debugLog(this, "**> stopRfLearning: " + e);
     }
+    session?.assert();
     this.learn = false;
+    await this.setCapabilityValue("learnRFcmd", false).catch(error => this.error("RF learning UI reset failed", error));
+    session?.assert();
   }
 
   async onCapabilityLearnRF(onoff) {
-    if (this.learn) {
+    if (onoff === false) {
+      this._stopLocalLearning();
+      await this.stopRfLearning(this._learningSession());
       return true;
     }
+    if (this.learn || this._localStopped) return true;
+    this._stopLocalLearning();
     this.learn = true;
-
-    let type = this.getData().devtype;
-    try {
-      var data;
-      await this._communicate.enterRFSweep();
-
-      if (this.isSpeechOutputAvailable()) {
-        await this.homey.speechOutput.say(this.homey.__("rf_learn.long_press"));
-      } else {
-        setTimeout(async () => { await this.setWarning(this.homey.__("rf_learn.long_press")); setTimeout(async () => { await this.unsetWarning(); }, 6000); }, 0);
-      }
-
-      await this._communicate.checkRFData();
-
-      if (this.isSpeechOutputAvailable()) {
-        await this.homey.speechOutput.say(this.homey.__("rf_learn.multi_presses"));
-      } else {
-        setTimeout(async () => { await this.setWarning(this.homey.__("rf_learn.multi_presses")); setTimeout(async () => { await this.unsetWarning(); }, 6000); }, 0);
-      }
-
-      if (type == 0x279d || type == 0x27a9) {
-        await this._communicate.enter_learning();
-        data = await this._communicate.check_IR_data();
-      } else {
-        data = await this._communicate.checkRFData2();
-      }
-      if (data) {
-        let idx = this.dataStore.dataArray.length + 1;
-        let cmdname = "rf-cmd" + idx;
-        this.dataStore.addCommand(cmdname, data);
+    const session = this._learningSession();
+    return this._trackLocalLearning((async () => {
+      const prompt = async key => {
+        session.assert();
+        if (this.isSpeechOutputAvailable()) await this.homey.speechOutput.say(this.homey.__(key));
+        else await this._localLearningWarning(this.homey.__(key), session);
+        session.assert();
+      };
+      try {
+        session.assert();
+        await session.communication.enterRFSweep();
+        session.assert();
+        await prompt("rf_learn.long_press");
+        await session.communication.checkRFData();
+        session.assert();
+        await prompt("rf_learn.multi_presses");
+        let data;
+        const type = Number(this.getData().devtype);
+        if (type === 0x279d || type === 0x27a9) {
+          await session.communication.enter_learning();
+          session.assert();
+          data = await session.communication.check_IR_data();
+        } else data = await session.communication.checkRFData2();
+        session.assert();
+        if (!data) throw new Error("No RF data received");
+        let idx = 1;
+        while (this.dataStore.dataArray.some(command => command.name === `rf-cmd${idx}`)) idx++;
+        const cmdname = `rf-cmd${idx}`;
+        const added = await this.dataStore.addCommand(cmdname, data);
+        session.assert();
+        if (!added) throw new Error("Learned RF command could not be saved");
         await this.storeCmdSetting(cmdname);
+        session.assert();
+        await this.stopRfLearning(session);
+        await prompt("rf_learn.done");
+        return true;
+      } catch (error) {
+        try { session.assert(); } catch (_) { return false; }
+        this._utils.debugLog(this, `Learning RF failed: ${error}`);
+        await this.stopRfLearning(session);
+        await prompt("rf_learn.error");
+        return false;
       }
-      await this.stopRfLearning();
-
-      if (this.isSpeechOutputAvailable()) {
-        await this.homey.speechOutput.say(this.homey.__("rf_learn.done"));
-      } else {
-        setTimeout(async () => { await this.setWarning(this.homey.__("rf_learn.done")); setTimeout(async () => { await this.unsetWarning(); }, 6000); }, 0);
-      }
-
-      return true;
-    } catch (e) {
-      this._utils.debugLog(this, "**> Learning RF failed");
-
-      if (this.isSpeechOutputAvailable()) {
-        await this.homey.speechOutput.say(this.homey.__("rf_learn.error"));
-      } else {
-        setTimeout(async () => { await this.setWarning(this.homey.__("rf_learn.error")); setTimeout(async () => { await this.unsetWarning(); }, 6000); }, 0);
-      }
-
-      await this.stopRfLearning();
-      return false;
-    }
+    })());
   }
 
   /**
@@ -105,7 +104,10 @@ class RmProDevice extends RM3MiniDevice {
   }
 
   async executeCommand(args) {
+    const generation = this._localGeneration;
+    const communication = this._communicate;
     try {
+      this._assertLocalOperation(generation, communication);
       let cmd = args["variable"];
 
       this._utils.debugLog(this, "executeCommand " + cmd.name);
@@ -121,16 +123,18 @@ class RmProDevice extends RM3MiniDevice {
         await this._communicate.send_IR_RF_data(cmdData);
       }
 
+      this._assertLocalOperation(generation, communication);
       cmdData = null;
 
       let drv = this.driver;
       // RC_specific_sent: user entered command name
-      drv.rmpro_specific_cmd_trigger.trigger(this, {}, { variable: cmd.name });
+      await Promise.resolve().then(() => { this._assertLocalOperation(generation, communication); return drv.rmpro_specific_cmd_trigger.trigger(this, {}, { variable: cmd.name }); }).catch(error => this.error("Command sent Flow failed", error));
 
       // RC_sent_any: set token
-      drv.rmpro_any_cmd_trigger.trigger(this, { CommandSent: cmd.name }, {});
+      await Promise.resolve().then(() => { this._assertLocalOperation(generation, communication); return drv.rmpro_any_cmd_trigger.trigger(this, { CommandSent: cmd.name }, {}); }).catch(error => this.error("Command sent Flow failed", error));
     } catch (e) {
       this._utils.debugLog(this, `Error executing command: ${e}`);
+      throw e;
     }
 
     return Promise.resolve(true);

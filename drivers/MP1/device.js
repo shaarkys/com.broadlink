@@ -24,17 +24,14 @@ const BroadlinkDevice = require('./../../lib/BroadlinkDevice');
 class MP1Device extends BroadlinkDevice {
 
 
-	generate_trigger(sid, mode) {
+	async generate_trigger(sid, mode) {
 		let capa = 'onoff.s' + sid
 		if (mode != this.getCapabilityValue(capa)) {
 			let drv = this.driver;
-			drv.trigger_toggle.trigger(this, {}, { "switchID": sid })
-			if (mode) {
-				drv.trigger_on.trigger(this, {}, { "switchID": sid })
-			}
-			else {
-				drv.trigger_off.trigger(this, {}, { "switchID": sid })
-			}
+			await Promise.all([
+				drv.trigger_toggle.trigger(this, {}, { "switchID": sid }),
+				(mode ? drv.trigger_on : drv.trigger_off).trigger(this, {}, { "switchID": sid }),
+			]);
 		}
 	}
 
@@ -46,10 +43,22 @@ class MP1Device extends BroadlinkDevice {
 	 * @param mode [boolean] true, false
 	 */
 	async set_onoff(sid, mode) {
-		this.generate_trigger(sid, mode);
 		try {
 			await this._communicate.mp1_set_power_state(sid, mode)
-		} catch (e) { ; }
+		} catch (e) {
+			this.error('Error setting MP1 power state', e);
+			throw e;
+		}
+		try {
+			await this.generate_trigger(sid, mode);
+		} catch (err) {
+			this.error('MP1 command acknowledged; Homey Flow trigger failed', err);
+		}
+		try {
+			await this.setCapabilityValue('onoff.s' + sid, mode);
+		} catch (err) {
+			this.error('MP1 command acknowledged; Homey capability update failed', err);
+		}
 	}
 
 
@@ -57,24 +66,37 @@ class MP1Device extends BroadlinkDevice {
 	 * Returns the power state of the smart power strip.
 	 */
 	async onCheckInterval() {
+		const generation = this._localGeneration;
+		const communication = this._communicate;
+		const active = () => !this._localStopped && generation === this._localGeneration && communication === this._communicate;
+		if (!active()) return;
 		try {
-			let state = await this._communicate.mp1_check_power()
+			let state = await communication.mp1_check_power();
+			if (!active()) return;
 			let s1, s2, s3, s4;
 			s1 = (state & 0x01) ? true : false;
 			s2 = (state & 0x02) ? true : false;
 			s3 = (state & 0x04) ? true : false;
 			s4 = (state & 0x08) ? true : false;
 
-			this.generate_trigger('1', s1)
-			this.generate_trigger('2', s2)
-			this.generate_trigger('3', s3)
-			this.generate_trigger('4', s4)
-			this.setCapabilityValue('onoff.s1', s1);
-			this.setCapabilityValue('onoff.s2', s2);
-			this.setCapabilityValue('onoff.s3', s3);
-			this.setCapabilityValue('onoff.s4', s4);
+			await Promise.all([
+				this.generate_trigger('1', s1),
+				this.generate_trigger('2', s2),
+				this.generate_trigger('3', s3),
+				this.generate_trigger('4', s4),
+			]).catch((err) => this.error('MP1 state read succeeded; Homey Flow trigger failed', err));
+			if (!active()) return;
+			await this.setCapabilityValue('onoff.s1', s1);
+			if (!active()) return;
+			await this.setCapabilityValue('onoff.s2', s2);
+			if (!active()) return;
+			await this.setCapabilityValue('onoff.s3', s3);
+			if (!active()) return;
+			await this.setCapabilityValue('onoff.s4', s4);
 
-		} catch (e) { ; }
+		} catch (e) {
+			if (active()) this.error('MP1 state polling failed', e);
+		}
 	}
 
 	check_condition_on(sid) {
@@ -83,32 +105,38 @@ class MP1Device extends BroadlinkDevice {
 		return Promise.resolve(onoff)
 	}
 
-	do_action_on(sid) {
-		let capa = 'onoff.s' + sid
-		this.set_onoff(sid, true)
-		this.setCapabilityValue(capa, true);
-		return Promise.resolve(true)
+	async do_action_on(sid) {
+		await this.set_onoff(sid, true);
+		return true;
 	}
 
-	do_action_off(sid) {
-		let capa = 'onoff.s' + sid
-		this.set_onoff(sid, false)
-		this.setCapabilityValue(capa, false);
-		return Promise.resolve(true)
+	async do_action_off(sid) {
+		await this.set_onoff(sid, false);
+		return true;
 	}
 
-	onCapabilityOnOff_1(mode) { this.set_onoff("1", mode); return Promise.resolve(); }
-	onCapabilityOnOff_2(mode) { this.set_onoff("2", mode); return Promise.resolve(); }
-	onCapabilityOnOff_3(mode) { this.set_onoff("3", mode); return Promise.resolve(); }
-	onCapabilityOnOff_4(mode) { this.set_onoff("4", mode); return Promise.resolve(); }
+	onCapabilityOnOff_1(mode) { return this.set_onoff("1", mode); }
+	onCapabilityOnOff_2(mode) { return this.set_onoff("2", mode); }
+	onCapabilityOnOff_3(mode) { return this.set_onoff("3", mode); }
+	onCapabilityOnOff_4(mode) { return this.set_onoff("4", mode); }
 
 	async onInit() {
-		await super.onInit();
+		this.stop_check_interval();
+		if (await super.onInit() === false || this._localStopped) return false;
 		this._utils.debugLog(this, "MP1 Device onInit called");
 		this.registerCapabilityListener('onoff.s1', this.onCapabilityOnOff_1.bind(this))
 		this.registerCapabilityListener('onoff.s2', this.onCapabilityOnOff_2.bind(this))
 		this.registerCapabilityListener('onoff.s3', this.onCapabilityOnOff_3.bind(this))
 		this.registerCapabilityListener('onoff.s4', this.onCapabilityOnOff_4.bind(this))
+		this.start_check_interval(this.getSettings().CheckInterval || 5);
+	}
+
+	async onSettings({ newSettings, changedKeys }) {
+		if (changedKeys.includes('ipAddress')) this._communicate.setIPaddress(newSettings.ipAddress);
+		if (changedKeys.includes('CheckInterval')) {
+			this.stop_check_interval();
+			this.start_check_interval(newSettings.CheckInterval);
+		}
 	}
 
 }

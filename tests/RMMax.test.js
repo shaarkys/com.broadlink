@@ -30,6 +30,8 @@ function harness() {
     packets.push(Buffer.from(payload));
     return responses.shift() || { error: 0 };
   };
+  // These tests inspect packet contracts; timer cancellation has separate coverage.
+  comm._delay = async () => {};
   return { comm, packets, responses };
 }
 
@@ -109,7 +111,7 @@ test("existing RM4 Pro command packets keep their original framing", async () =>
 });
 
 test("failed RM Max sends reject the Flow action without firing sent triggers", async () => {
-  const device = {
+  const device = Object.assign(Object.create(RM4ProDevice.prototype), {
     getData: () => ({ devtype: String(0xaf8b) }),
     _utils: { debugLog() {} },
     _communicate: { send_IR_RF_data_rm4pro: async () => { throw new Error("device rejected command"); } },
@@ -118,7 +120,7 @@ test("failed RM Max sends reject the Flow action without firing sent triggers", 
       rm4_pro_specific_cmd_trigger: { trigger: () => assert.fail("must not trigger") },
       rm4_pro_any_cmd_trigger: { trigger: () => assert.fail("must not trigger") },
     },
-  };
+  });
   await assert.rejects(RM4ProDevice.prototype.executeCommand.call(device, { variable: { name: "TV" } }), /device rejected/);
 });
 

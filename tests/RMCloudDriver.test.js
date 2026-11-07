@@ -796,3 +796,48 @@ test('real cloud short-ack parsing completes controls, power values and sent-com
   assert.deepEqual(state.sends.map(sent => sent.code), [rows[0].codeList[0].code, rows[2].codeList[0].code, rows[1].codeList[0].code]);
   await d.device.onUninit(); x.driver.onUninit();
 });
+
+test('stopping during cloud bootstrap or initial status prevents later initialization stages and polling', async () => {
+  for (const stage of ['store', 'unset', 'status']) {
+    const x = await paired(); const d = deviceFor(x);
+    const entered = deferred(), gate = deferred();
+    let available = 0;
+    d.device.setAvailable = async () => { available++; };
+    if (stage === 'status') {
+      const write = d.device.setCapabilityValue.bind(d.device);
+      d.device.setCapabilityValue = async (id, value) => {
+        if (id === 'rmmax_status') { entered.resolve(); await gate.promise; }
+        return write(id, value);
+      };
+    } else {
+      d.store.set('bootstrapToken', 'mock-bootstrap');
+      x.driver.takePairingBundle = () => copy(x.bundle);
+      const method = stage === 'store' ? 'setStoreValue' : 'unsetStoreValue';
+      const write = d.device[method].bind(d.device);
+      d.device[method] = async (...args) => { entered.resolve(); await gate.promise; return write(...args); };
+    }
+    const initializing = d.device.onInit(); await entered.promise;
+    await d.device.onDeleted(); gate.resolve(); await initializing;
+    assert.equal(d.device._stopped, true, stage); assert.equal(available, 0, stage);
+    assert.equal(x.timers.size, 0, stage); assert.equal(x.triggers.length, 0, stage);
+    if (stage !== 'status') assert.equal(d.values.rmmax_status, undefined, stage);
+    if (stage === 'store') assert.equal(d.store.get('bootstrapToken'), 'mock-bootstrap');
+    x.driver.onUninit();
+  }
+});
+
+test('a newer initialization supersedes an older initial status update without duplicate availability or polling', async () => {
+  const x = await paired(); const d = deviceFor(x);
+  const entered = deferred(), gate = deferred();
+  const write = d.device.setCapabilityValue.bind(d.device);
+  let statuses = 0, available = 0;
+  d.device.setCapabilityValue = async (id, value) => {
+    if (id === 'rmmax_status' && ++statuses === 1) { entered.resolve(); await gate.promise; }
+    return write(id, value);
+  };
+  d.device.setAvailable = async () => { available++; };
+  const first = d.device.onInit(); await entered.promise;
+  await d.device.onInit(); gate.resolve(); await first;
+  assert.equal(available, 1); assert.equal(x.timers.size, 1); assert.equal(d.device._stopped, false);
+  await d.device.onUninit(); x.driver.onUninit();
+});

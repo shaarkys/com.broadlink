@@ -143,14 +143,27 @@ class RM4miniDevice extends BroadlinkDevice {
     }
   }
 
-  _stopOperations() {
-    this._operationsStopped = true;
-    this._operationGeneration = (this._operationGeneration || 0) + 1;
+  _assertLearning(communication, generation, learningGeneration) {
+    this._assertConnection(communication, generation);
+    if (learningGeneration !== this._irLearningGeneration) {
+      throw Object.assign(new Error("RM4 mini IR learning cancelled"), { code: "BROADLINK_CANCELLED" });
+    }
+  }
+
+  _cancelIRLearning() {
+    this._irLearningGeneration = (this._irLearningGeneration || 0) + 1;
     if (this.learnTimeout) clearTimeout(this.learnTimeout);
     this.learnTimeout = null;
     if (this._learningWarningTimeout) this.homey.clearTimeout(this._learningWarningTimeout);
     this._learningWarningTimeout = null;
+    if (this._communicate?.cancelLearning) this._communicate.cancelLearning();
     this.learn = false;
+  }
+
+  _stopOperations() {
+    this._operationsStopped = true;
+    this._operationGeneration = (this._operationGeneration || 0) + 1;
+    this._cancelIRLearning();
   }
 
   async _drainOperations() {
@@ -159,30 +172,33 @@ class RM4miniDevice extends BroadlinkDevice {
     await this._learningWarningUpdate;
   }
 
-  async _showLearningWarning(message, communication, generation) {
-    this._assertConnection(communication, generation);
+  async _showLearningWarning(message, communication, generation, learningGeneration = this._irLearningGeneration) {
+    this._assertLearning(communication, generation, learningGeneration);
     await this.setWarning(message);
-    this._assertConnection(communication, generation);
+    this._assertLearning(communication, generation, learningGeneration);
     if (this._learningWarningTimeout) this.homey.clearTimeout(this._learningWarningTimeout);
     this._learningWarningTimeout = this.homey.setTimeout(() => {
       this._learningWarningTimeout = null;
-      if (this._operationsStopped || communication !== this._communicate || generation !== this._operationGeneration) return;
+      if (this._operationsStopped || communication !== this._communicate || generation !== this._operationGeneration || learningGeneration !== this._irLearningGeneration) return;
       this._learningWarningUpdate = this.setWarning(null).catch(this.error);
     }, 5000);
   }
 
-  _withAuthentication(operation) {
+  _withAuthentication(operation, assertActive = () => {}) {
     const communication = this._communicate;
     const generation = this._operationGeneration;
     return this._enqueue(async () => {
       try {
+        assertActive();
         return await operation();
       } catch (err) {
         this._assertConnection(communication, generation);
+        assertActive();
         if (err.code !== -7) throw err;
         this.log("RM4 mini control key expired; authenticating and retrying once");
         await this.authenticateDevice();
         this._assertConnection(communication, generation);
+        assertActive();
         return operation();
       }
     });
@@ -251,9 +267,11 @@ class RM4miniDevice extends BroadlinkDevice {
     await this._drainOperations();
     if (generation !== this._operationGeneration) return;
     if (this._communicate) this._communicate.destroy();
-    await super.onInit();
+    if (await super.onInit() === false) return false;
     if (generation !== this._operationGeneration) return;
     this._operationsStopped = false;
+    const communication = this._communicate;
+    const isActive = () => !this._operationsStopped && generation === this._operationGeneration && communication === this._communicate;
     this._utils.debugLog(this, "RM4 Mini Device onInit called");
     if (this.homey?.app && typeof this.homey.app.registerRfDevice === "function") {
       this.homey.app.registerRfDevice(this);
@@ -261,12 +279,14 @@ class RM4miniDevice extends BroadlinkDevice {
     // Ensure the learnIRcmd capability exists and set its initial value
     if (!this.hasCapability("learnIRcmd")) {
       await this.addCapability("learnIRcmd");
+      if (!isActive()) return false;
     }
     this.setCapabilityValue("learnIRcmd", false).catch(this.error);
 
     // Ensure the learningState capability exists and set its initial value
     if (!this.hasCapability("learningState")) {
       await this.addCapability("learningState");
+      if (!isActive()) return false;
     }
     this.setCapabilityValue("learningState", false).catch(this.error);
 
@@ -274,15 +294,22 @@ class RM4miniDevice extends BroadlinkDevice {
 
     try {
       this.dataStore = new DataStore(this.getData().mac, this.homey);
-      await this.dataStore.readCommands(async () => {
-        this.updateSettings();
-      });
+      await this.dataStore.readCommands();
+      if (!isActive()) return false;
+
+      await this.updateSettings();
+      if (!isActive()) return false;
+
     } catch (err) {
+      if (!isActive()) return false;
       if (err instanceof SyntaxError && err.message.includes("Unexpected token")) {
         this._utils.debugLog(this, `Device.onInit Error: ${err.message}`);
         await this.dataStore.deleteAllCommands();
+        if (!isActive()) return false;
         this._utils.debugLog(this, "Corrupted JSON detected and deleted.");
-        this.updateSettings(); // Call updateSettings again after deleting corrupted JSON
+
+        await this.updateSettings(); // Refresh after removing invalid stored commands
+        if (!isActive()) return false;
       } else {
         this._utils.debugLog(this, `Device.onInit Error: ${err.message}`);
         throw err; // Re-throw if it's not the specific error we're handling
@@ -299,22 +326,30 @@ class RM4miniDevice extends BroadlinkDevice {
     const communication = this._communicate;
     const generation = this._operationGeneration;
 
-    if (this.learnTimeout) {
-      clearTimeout(this.learnTimeout); // Clear any existing timeout
+    if (!onoff) {
+      this._cancelIRLearning();
+      const learningGeneration = this._irLearningGeneration;
+      try {
+        this._assertLearning(communication, generation, learningGeneration);
+        await this.setCapabilityValue("learnIRcmd", false).catch(this.error);
+        this._assertLearning(communication, generation, learningGeneration);
+        await this.setCapabilityValue("learningState", false).catch(this.error);
+        return true;
+      } catch (error) {
+        if (error.code === "BROADLINK_CANCELLED" || this._operationsStopped) return false;
+        throw error;
+      }
     }
+    if (this.learn || this._operationsStopped) return false;
+    this._cancelIRLearning();
+    const learningGeneration = this._irLearningGeneration;
+    const assertLearning = () => this._assertLearning(communication, generation, learningGeneration);
+    const options = { learning: true, isCancelled: () => learningGeneration !== this._irLearningGeneration };
 
     this.learnTimeout = setTimeout(() => {
+      this.learnTimeout = null;
       const task = (async () => {
-        if (this._operationsStopped || communication !== this._communicate || generation !== this._operationGeneration) return false;
-        if (!onoff) {
-          this._utils.debugLog(this, "Turning off learning mode");
-          this.learn = false;
-          await this.setCapabilityValue("learnIRcmd", false).catch(this.error);
-          this._assertConnection(communication, generation);
-          await this.setCapabilityValue("learningState", false).catch(this.error);
-          return true;
-        }
-
+        if (this._operationsStopped || communication !== this._communicate || generation !== this._operationGeneration || learningGeneration !== this._irLearningGeneration) return false;
         if (this.learn) {
           this._utils.debugLog(this, "Learning mode already active, not restarting");
           return false;
@@ -322,60 +357,62 @@ class RM4miniDevice extends BroadlinkDevice {
 
         this.learn = true;
         await this.setCapabilityValue("learningState", true).catch(this.error);
-        this._assertConnection(communication, generation);
+        assertLearning();
         this._utils.debugLog(this, "Starting IR learning mode");
 
         try {
-          await this._withAuthentication(() => this._communicate.enter_learning_rm4mini());
-          this._assertConnection(communication, generation);
+          await this._withAuthentication(() => { assertLearning(); return communication.enter_learning_rm4mini(options); }, assertLearning);
+          assertLearning();
           this._utils.debugLog(this, "Entered learning mode");
 
           let data = await this._communicate.check_IR_data_rm4mini(
             () => {
-              this._assertConnection(communication, generation);
-              return this._withAuthentication(() => communication.read_IR_data_rm4mini());
-            }
+              assertLearning();
+              return this._withAuthentication(() => { assertLearning(); return communication.read_IR_data_rm4mini(options); }, assertLearning);
+            }, options
           );
-          this._assertConnection(communication, generation);
+          assertLearning();
           this._utils.debugLog(this, `Checked IR data, data: ${data}`);
 
           if (data) {
             const cmdname = this.getNextCmdName();
             const added = await this.dataStore.addCommand(cmdname, data);
-            this._assertConnection(communication, generation);
+            assertLearning();
             if (!added) throw new Error(`Could not save learned command: ${cmdname}`);
 
             await this.storeCmdSetting(cmdname);
-            this._assertConnection(communication, generation);
+            assertLearning();
             this._utils.debugLog(this, `Stored command: ${cmdname}`);
             const offset = this.getCurrentOffset();
             await this.fillRcCmdPage(offset);
-            this._assertConnection(communication, generation);
+            assertLearning();
 
             await this.setCapabilityValue("learnIRcmd", false).catch(this.error); // Turn off the capability after success
-            this._assertConnection(communication, generation);
+            assertLearning();
             await this.setCapabilityValue("learningState", false).catch(this.error);
-            await this._showLearningWarning(`Stored command: ${cmdname}`, communication, generation);
+            await this._showLearningWarning(`Stored command: ${cmdname}`, communication, generation, learningGeneration);
             this.learn = false;
             return true;
           } else {
             this._utils.debugLog(this, "No IR data received");
             await this.setCapabilityValue("learnIRcmd", false).catch(this.error); // Turn off the capability after failure
-            this._assertConnection(communication, generation);
+            assertLearning();
             await this.setCapabilityValue("learningState", false).catch(this.error);
-            await this._showLearningWarning("IR learning timed out, no data received.", communication, generation);
+            await this._showLearningWarning("IR learning timed out, no data received.", communication, generation, learningGeneration);
             this.learn = false;
             return false;
           }
         } catch (e) {
-          if (this._operationsStopped || communication !== this._communicate || generation !== this._operationGeneration) return false;
+          if (this._operationsStopped || communication !== this._communicate || generation !== this._operationGeneration || learningGeneration !== this._irLearningGeneration) return false;
           this._utils.debugLog(this, `Error during IR learning: ${e}`);
           await this.setCapabilityValue("learnIRcmd", false).catch(this.error); // Turn off the capability after error
-          this._assertConnection(communication, generation);
+          assertLearning();
           await this.setCapabilityValue("learningState", false).catch(this.error);
-          await this._showLearningWarning(`IR learning failed: ${e}`, communication, generation);
+          await this._showLearningWarning(`IR learning failed: ${e}`, communication, generation, learningGeneration);
           this.learn = false;
           return false;
+        } finally {
+          if (!this._operationsStopped && communication === this._communicate && generation === this._operationGeneration && learningGeneration === this._irLearningGeneration) this.learn = false;
         }
       })();
       if (!this._learningTasks) this._learningTasks = new Set();
@@ -522,13 +559,16 @@ class RM4miniDevice extends BroadlinkDevice {
    */
   async onDeleted() {
     await this.onUninit();
-    this._utils.debugLog(this, 'Device deleted, will be deleting all commands :'+ this.getData().id);
-    this.dataStore.deleteAllCommands();
-    this.stop_check_interval();
-    if (this._communicate) this._communicate.destroy();
-    this._communicate = null;
-    if (this.homey?.app && typeof this.homey.app.unregisterRfDevice === "function") {
-      this.homey.app.unregisterRfDevice(this);
+    try {
+      this._utils.debugLog(this, "Device deleted; deleting stored commands");
+      await this.dataStore.deleteAllCommands();
+    } finally {
+      this.stop_check_interval();
+      if (this._communicate) this._communicate.destroy();
+      this._communicate = null;
+      if (this.homey?.app && typeof this.homey.app.unregisterRfDevice === "function") {
+        this.homey.app.unregisterRfDevice(this);
+      }
     }
   }
 }

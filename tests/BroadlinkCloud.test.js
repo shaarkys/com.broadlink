@@ -98,6 +98,51 @@ test('credential extraction requires valid complete credentials and known device
   assert.equal(extractCredentials({ ...hub, cookie: { device: { id: 0x100000000, key } } }), null);
   assert.equal(isRMMaxEndpoint(hub), true); assert.equal(isRMMaxEndpoint({ devtype: 0xaf8b }), true); assert.equal(isRMMaxEndpoint({ name: 'RM Max' }), false);
 });
+
+test('RM Max EU rejects explicit failures even with a matching padded acknowledgment and never retries', async () => {
+  const cases = [
+    { mutate: response => { response.status = -5; }, code: 'RM_CLOUD_RESPONSE', reason: 'cloud_rejected' },
+    { mutate: response => { response.event.payload.status = -5; }, code: 'RM_CLOUD_RESPONSE', reason: 'payload_rejected' },
+    { mutate: response => { response.status = -1012; }, code: 'AUTH_REQUIRED' },
+    ...[['INVALID_ACCESSTOKEN', 'AUTH_REQUIRED'], ['ENDPOINT_UNREACHABLE', 'ENDPOINT_OFFLINE'], ['NO_SUCH_ENDPOINT', 'ENDPOINT_MISSING']].map(([type, code]) => ({
+      mutate: response => { response.event.header.name = 'ErrorResponse'; response.event.payload.type = type; }, code, reason: 'error_response'
+    }))
+  ];
+  for (const expected of cases) {
+    let requests = 0;
+    const client = new BroadlinkCloud(euSession, { request: async (_, { body }) => {
+      requests++;
+      const directive = JSON.parse(body).directive;
+      const response = { status: 0, event: { header: { ...directive.header, name: 'Response' }, endpoint: { endpointId: hub.endpointId },
+        payload: { status: 0, data: 'AgAAAAAAAAAAAAAAAAAAAA==' } } };
+      expected.mutate(response);
+      return response;
+    } });
+    await assert.rejects(client.sendCode(hub, 'aabb'), error => error.code === expected.code && (!expected.reason || error.reason === expected.reason));
+    assert.equal(requests, 1);
+  }
+});
+
+test('RM Max EU retains response binding and its padded acknowledgment contract', async () => {
+  for (const mutate of [
+    response => { response.event.header.namespace = 'DNA.Other'; },
+    response => { response.event.header.interfaceVersion = '3'; },
+    response => { response.event.header.messageId = 'unrelated'; },
+    response => { response.event.endpoint.endpointId = 'unrelated'; },
+    response => { response.event.payload.data = 'AgAAAA=='; }
+  ]) {
+    let requests = 0;
+    const client = new BroadlinkCloud(euSession, { request: async (_, { body }) => {
+      requests++;
+      const directive = JSON.parse(body).directive;
+      const response = { event: { header: { ...directive.header, name: 'Response' }, endpoint: { endpointId: hub.endpointId },
+        payload: { data: 'AgAAAAAAAAAAAAAAAAAAAA==' } } };
+      mutate(response); return response;
+    } });
+    await assert.rejects(client.sendCode(hub, 'aabb'), error => error.code === 'RM_CLOUD_RESPONSE');
+    assert.equal(requests, 1);
+  }
+});
 test('Magic Home authorization, refresh, discovery and control use official directives', async () => {
   const calls = [];
   const request = async (url, req) => {

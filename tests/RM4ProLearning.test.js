@@ -78,6 +78,7 @@ async function runLearning(t, frequency, captureError) {
     _utils: comm._utils,
     _communicate: {
       encodeRFFrequency_rm4pro: comm.encodeRFFrequency_rm4pro.bind(comm),
+      _delay: comm._delay.bind(comm),
       enterRFSweep_rm4pro: async () => calls.push("sweep"),
       checkRFData_rm4pro: async () => { calls.push("findFrequency"); return comm.encodeRFFrequency_rm4pro(315); },
       checkRFData2_rm4pro: async (bytes) => {

@@ -339,6 +339,7 @@ test("RM4 mini reinitialization rejects old queued work before replacing the con
   const replacement = harness().comm;
   t.mock.method(BroadlinkDevice.prototype, "onInit", async function () { this._communicate = replacement; });
   t.mock.method(DataStore.prototype, "readCommands", async () => {});
+  device.updateSettings = async () => {};
   device.hasCapability = () => true;
   device.setCapabilityValue = async () => {};
   device.registerCapabilityListener = () => {};
@@ -358,7 +359,7 @@ test("RM4 mini stopped learning cannot poll or store data through a replacement 
   const { device, calls } = harness();
   let run;
   let wake;
-  t.mock.method(global, "setTimeout", (fn) => { if (!run) run = fn; return 1; });
+  t.mock.method(global, "setTimeout", (fn, delay) => { if (delay === 300) run = fn; else if (delay === 2000) wake = fn; return 1; });
   t.mock.method(global, "clearTimeout", () => {});
   device.homey.setTimeout = (fn) => { wake = fn; };
   device.setCapabilityValue = async (id, value) => calls.push([id, value]);
@@ -443,4 +444,58 @@ test("RM4 mini successful learning awaits persistence and cancels its warning re
   const before = calls.length;
   resetWarning();
   assert.equal(calls.length, before);
+});
+
+const flushLearning = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
+
+test("RM4 mini cancellation immediately invalidates pending debounce without affecting command sends", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { device, calls } = harness();
+  device.setCapabilityValue = async () => {};
+  await device.onCapabilityLearnIR(true);
+  await device.onCapabilityLearnIR(false);
+  t.mock.timers.tick(300); await flushLearning();
+  assert.equal(packets(calls).length, 0);
+  assert.equal(device.learn, false);
+  assert.equal(await device.executeCommand(args), true);
+  assert.equal(packets(calls).length, 1);
+});
+
+test("RM4 mini cancelled capture cannot persist or reset a replacement learning session", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { device, comm, calls } = harness();
+  const oldCapture = deferred(), newCapture = deferred();
+  let reads = 0, stored = 0;
+  device.setCapabilityValue = async (id, value) => calls.push([id, value]);
+  device.setWarning = async () => {};
+  device.getNextCmdName = () => "cmd1";
+  device.getCurrentOffset = () => 0;
+  device.dataStore.addCommand = async () => { stored++; return true; };
+  device.storeCmdSetting = device.fillRcCmdPage = async () => {};
+  comm.check_IR_data_rm4mini = () => (++reads === 1 ? oldCapture.promise : newCapture.promise);
+  await device.onCapabilityLearnIR(true); t.mock.timers.tick(300); await flushLearning();
+  const oldTask = [...device._learningTasks][0];
+  await device.onCapabilityLearnIR(false);
+  await device.onCapabilityLearnIR(true); t.mock.timers.tick(300); await flushLearning();
+  assert.equal(device.learn, true);
+  const beforeLate = calls.length;
+  oldCapture.resolve(shortIR); await oldTask;
+  assert.equal(device.learn, true); assert.equal(stored, 0);
+  assert.equal(calls.slice(beforeLate).some(call => call[0] === "learningState" && call[1] === false), false);
+  newCapture.resolve(shortIR); await Promise.allSettled(device._learningTasks);
+  assert.equal(stored, 1); assert.equal(device.learn, false);
+});
+
+test("RM4 mini learning cancellation stops the physical read's pending transport retry", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { device, comm } = harness(); let sends = 0;
+  device.setCapabilityValue = async () => {};
+  comm.enter_learning_rm4mini = async () => {};
+  comm.send_packet = Communicate.prototype.send_packet.bind(comm);
+  comm.sendto = async () => { sends++; throw new Error("mock UDP timeout"); };
+  await device.onCapabilityLearnIR(true); t.mock.timers.tick(300); await flushLearning();
+  t.mock.timers.tick(2000); await flushLearning(); assert.equal(sends, 1);
+  await device.onCapabilityLearnIR(false); await device._drainOperations();
+  t.mock.timers.tick(60000); await flushLearning();
+  assert.equal(sends, 1); assert.equal(device.learn, false);
 });

@@ -50,16 +50,18 @@ class A1Device extends BroadlinkDevice {
 
 
 	async onInit() {
-		await super.onInit();
+		this.stop_check_interval();
+		if (await super.onInit() === false || this._localStopped) return false;
 		this.registerCapabilityListener('updateSensor', this.onCapabilityUpdateSensor.bind(this));
 		this.air_quality = AirQualityLevel.unknown.value;
 		this.light_level = LightLevel.unknown.value;
 		this.noise_level = NoiseLevel.unknown.value;
+		this.start_check_interval(this.getSettings().CheckInterval || 5);
 	}
 
 
 	onCapabilityUpdateSensor(onoff) {
-		this.onCheckInterval();
+		return this.onCheckInterval();
 	}
 
 
@@ -172,8 +174,13 @@ class A1Device extends BroadlinkDevice {
 	 * Called when the periodic timer expires
 	 */
 	async onCheckInterval() {
+		const generation = this._localGeneration;
+		const communication = this._communicate;
+		const active = () => !this._localStopped && generation === this._localGeneration && communication === this._communicate;
+		if (!active()) return;
 		try {
-			let response = await this._communicate.read_status();
+			let response = await communication.read_status();
+			if (!active()) return;
 
 			let temperature = (response[0] * 10 + response[1]) / 10.0;
 			let humidity = (response[2] * 10 + response[3]) / 10.0;
@@ -195,8 +202,10 @@ class A1Device extends BroadlinkDevice {
 				default: this.air_quality = AirQualityLevel.unknown.value; str_air_quality = AirQualityLevel.unknown.name; break;
 			}
 			if (this.air_quality != AirQualityLevel.unknown.value) {
-				this.setCapabilityValue('a1_air_quality', str_air_quality, true);
-				this.setCapabilityValue('a1_air_quality_number', this.air_quality);
+				await this.setCapabilityValue('a1_air_quality', str_air_quality, true);
+				if (!active()) return;
+				await this.setCapabilityValue('a1_air_quality_number', this.air_quality);
+				if (!active()) return;
 			}
 
 			switch (str_light) {
@@ -207,8 +216,10 @@ class A1Device extends BroadlinkDevice {
 				default: this.light_level = LightLevel.unknown.value; str_light = LightLevel.unknown.name; break;
 			}
 			if (this.light_level != LightLevel.unknown.value) {
-				this.setCapabilityValue('a1_light_level', str_light, true);
-				this.setCapabilityValue('a1_light_level_number', this.light_level);
+				await this.setCapabilityValue('a1_light_level', str_light, true);
+				if (!active()) return;
+				await this.setCapabilityValue('a1_light_level_number', this.light_level);
+				if (!active()) return;
 			}
 
 			switch (str_noise) {
@@ -218,17 +229,23 @@ class A1Device extends BroadlinkDevice {
 				default: this.noise_level = NoiseLevel.unknown.value; str_noise = NoiseLevel.unknown.name; break;
 			}
 			if (this.noise_level != NoiseLevel.unknown.value) {
-				this.setCapabilityValue('a1_noise_level', str_noise, true);
-				this.setCapabilityValue('a1_noise_level_number', this.noise_level);
+				await this.setCapabilityValue('a1_noise_level', str_noise, true);
+				if (!active()) return;
+				await this.setCapabilityValue('a1_noise_level_number', this.noise_level);
+				if (!active()) return;
 			}
 
-			this.setCapabilityValue('measure_temperature', temperature);
-			this.setCapabilityValue('measure_humidity', humidity);
+			await this.setCapabilityValue('measure_temperature', temperature);
+			if (!active()) return;
+			await this.setCapabilityValue('measure_humidity', humidity);
+			if (!active()) return;
 
 			let drv = this.driver;
-			if (curr_air_quality != this.air_quality) { drv.a1_trigger_air_quality.trigger(this, { 'airquality': str_air_quality }, {}) }
-			if (curr_light != this.light_level) { drv.a1_trigger_light_level.trigger(this, { 'lightlevel': str_light }, {}) }
-			if (curr_noise != this.noise_level) { drv.a1_trigger_noise_level.trigger(this, { 'noiselevel': str_noise }, {}) }
+			if (curr_air_quality != this.air_quality) { await drv.a1_trigger_air_quality.trigger(this, { 'airquality': str_air_quality }, {}) }
+			if (!active()) return;
+			if (curr_light != this.light_level) { await drv.a1_trigger_light_level.trigger(this, { 'lightlevel': str_light }, {}) }
+			if (!active()) return;
+			if (curr_noise != this.noise_level) { await drv.a1_trigger_noise_level.trigger(this, { 'noiselevel': str_noise }, {}) }
 
 		} catch (e) {
 			this._utils.debugLog(this, '**> A1.onCheckInterval: ' + e);
@@ -242,7 +259,7 @@ class A1Device extends BroadlinkDevice {
 			try {
 				this._utils.debugLog(this, 'Settings changed:', changedKeys);
 
-				changedKeys.forEach(key => {
+				for (const key of changedKeys) {
 					this._utils.debugLog(this, `Changed setting key: ${key}, Old value: ${oldSettings[key]}, New value: ${newSettings[key]}`);
 
 					if (key === 'ipAddress' && newSettings.ipAddress) {
@@ -254,22 +271,22 @@ class A1Device extends BroadlinkDevice {
 						this.stop_check_interval();
 						this.start_check_interval(newSettings.CheckInterval);
 					}
-					if (key === 'Authenticate') {
+					if (key === 'Authenticate' && newSettings.Authenticate) {
 						this._utils.debugLog(this, "Re-authenticating device due to settings change");
 						let deviceData = this.getData();
 						let options = {
-						  ipAddress: this.getSettings().ipAddress,
+						  ipAddress: newSettings.ipAddress,
 						  mac: this._utils.hexToArr(deviceData.mac),
 						  count: Math.floor(Math.random() * 0xffff),
 						  id: null,
 						  key: null,
 						  homey: this.homey,
-						  deviceType: parseInt(deviceData.devtype, 16),
+						  deviceType: Number(deviceData.devtype),
 						};
 						this._communicate.configure(options);
-						this.authenticateDevice();
+						await this.authenticateDevice();
 					}
-				});
+				}
 			} catch (err) {
 				this._utils.debugLog(this, 'Error handling settings change: ', err);
 				throw new Error('Settings could not be updated: ' + err.message);

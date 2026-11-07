@@ -12,8 +12,10 @@ const rfState = {
   devices: [],
   selectedMac: "",
   commands: [],
+  commandsRevision: 0,
   prontoResult: null,
 };
+let rfActionQueue = Promise.resolve();
 
 function settingsGet(Homey, key) {
   return new Promise((resolve, reject) => {
@@ -72,8 +74,14 @@ async function waitForResult(Homey, requestId, timeoutMs) {
 
 async function callAction(Homey, action) {
   const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  await settingsSet(Homey, "rfManagerAction", Object.assign({}, action, { requestId }));
-  return waitForResult(Homey, requestId, 4000);
+  const request = Object.assign({}, action, { requestId });
+  // The settings bridge has one result slot; wait for it before starting another request.
+  const pending = rfActionQueue.then(async () => {
+    await settingsSet(Homey, "rfManagerAction", request);
+    return waitForResult(Homey, requestId, 4000);
+  });
+  rfActionQueue = pending.catch(() => {});
+  return pending;
 }
 
 function setUsageText(text) {
@@ -240,35 +248,46 @@ async function loadDevices(Homey) {
 }
 
 async function loadCommands(Homey) {
-  if (!rfState.selectedMac) {
-    renderCommands();
+  const mac = rfState.selectedMac;
+  const revision = ++rfState.commandsRevision;
+  const current = () => revision === rfState.commandsRevision && mac === rfState.selectedMac;
+  rfState.commands = [];
+  renderCommands();
+  if (!mac) {
     return;
   }
+  setUsageText("Loading commands…");
   try {
-    await callAction(Homey, { type: "refreshCommands", mac: rfState.selectedMac });
-    const commands = await settingsGet(Homey, `rfCommands_${rfState.selectedMac}`);
+    await callAction(Homey, { type: "refreshCommands", mac });
+    if (!current()) return;
+    const commands = await settingsGet(Homey, `rfCommands_${mac}`);
+    if (!current()) return;
     rfState.commands = Array.isArray(commands) ? commands : [];
     setUsageText(`${rfState.commands.length} command(s) stored`);
     renderCommands();
   } catch (err) {
+    if (!current()) return;
     console.error(err);
     Homey.alert("Failed to load commands for this device.", "error");
   }
 }
 
 async function onGeneratePronto(cmdName) {
+  const mac = rfState.selectedMac;
   const carrierInput = document.getElementById("pronto-carrier");
   const carrierHz = Number(carrierInput ? carrierInput.value : 38000);
   try {
     const result = await callAction(Homey, {
       type: "generatePronto",
-      mac: rfState.selectedMac,
+      mac,
       cmdName,
       carrierHz,
     });
+    if (rfState.selectedMac !== mac) return;
     rfState.prontoResult = result;
     renderProntoResult();
   } catch (err) {
+    if (rfState.selectedMac !== mac) return;
     console.error(err);
     Homey.alert(err && err.message ? err.message : "Pronto Hex conversion failed", "error");
   }
@@ -294,26 +313,32 @@ async function copyProntoOutput(Homey) {
 }
 
 async function onRenameCommand(oldName, newName) {
+  const mac = rfState.selectedMac;
   if (!newName || newName === oldName) {
     return;
   }
   try {
-    await callAction(Homey, { type: "renameCommand", mac: rfState.selectedMac, oldName, newName });
+    await callAction(Homey, { type: "renameCommand", mac, oldName, newName });
+    if (rfState.selectedMac !== mac) return;
     await loadCommands(Homey);
     Homey.alert(`Renamed to ${newName}`, "info");
   } catch (err) {
+    if (rfState.selectedMac !== mac) return;
     console.error(err);
     Homey.alert(err && err.message ? err.message : "Rename failed", "error");
   }
 }
 
 async function onDeleteCommand(cmdName) {
+  const mac = rfState.selectedMac;
   const confirmed = await askDeleteConfirmation(Homey, cmdName);
-  if (!confirmed) return;
+  if (!confirmed || rfState.selectedMac !== mac) return;
   try {
-    await callAction(Homey, { type: "deleteCommand", mac: rfState.selectedMac, cmdName });
+    await callAction(Homey, { type: "deleteCommand", mac, cmdName });
+    if (rfState.selectedMac !== mac) return;
     await loadCommands(Homey);
   } catch (err) {
+    if (rfState.selectedMac !== mac) return;
     console.error(err);
     Homey.alert("Delete failed", "error");
   }
@@ -390,6 +415,6 @@ async function onHomeyReady(Homey) {
   bindDebugSettings(Homey);
   loadDebugSettings(Homey);
   wireRfEvents(Homey);
-  await loadDevices(Homey);
   Homey.ready();
+  await loadDevices(Homey);
 }

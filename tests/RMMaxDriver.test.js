@@ -5,6 +5,7 @@ const Module = require('node:module');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const realCloud = require('../lib/BroadlinkCloud');
 const systemCapabilities = new Set(require('./fixtures/homey-rmmax-capabilities.json').systemCapabilities);
 const driverManifest = require('../drivers/RM_max/driver.compose.json');
 const knownCapability = id => systemCapabilities.has(id.split('.')[0]) || fs.existsSync(path.join(__dirname, '../.homeycompose/capabilities', id + '.json'));
@@ -232,6 +233,38 @@ test('a cloud outage leaves previously verified EU local control available', asy
   await x.device.executeCommand({ variable: x.device.onAutoComplete()[0] }); assert.equal(scenario.localSends, 1);
 });
 
+test('verified local selection recovers an earlier cloud outage without clearing authorization diagnostics', async () => {
+  for (const code of ['TIMEOUT', 'AUTH_REQUIRED']) {
+    reset(); const base = await newBundle(); const x = makeDevice(base.driver, base.bundle);
+    await x.device.onInit(); await x.device.probeLocal();
+    scenario.listDevices = async () => { throw Object.assign(Error('private'), { code }); };
+    await assert.rejects(x.device.refreshCommands());
+    assert(x.device.testUnavailable);
+    const diagnostic = x.values.rmmax_status;
+    await x.device.onSettings({ newSettings: { ...x.settings, transport: 'local' }, changedKeys: ['transport'] });
+    x.settings.transport = 'local';
+    assert.equal(x.device.testUnavailable, false);
+    assert.equal(x.values.rmmax_status, diagnostic);
+    assert.equal(x.device._authRequired, code === 'AUTH_REQUIRED');
+    await x.device.executeCommand({ variable: x.device.onAutoComplete()[0] });
+    assert.equal(scenario.localSends, 1); assert.equal(scenario.cloudSends, 0);
+    await x.device.onUninit(); base.driver.onUninit();
+  }
+});
+
+test('verified local selection does not conceal failed Homey control initialization', async () => {
+  reset(); const base = await newBundle(); const x = makeDevice(base.driver, base.bundle);
+  await x.device.onInit(); await x.device.probeLocal();
+  x.device._syncCapabilities = async () => { throw new Error('mock SDK failure'); };
+  await x.device.onInit();
+  const unavailable = x.device.testUnavailable;
+  assert.match(unavailable, /Homey controls/);
+  await x.device.onSettings({ newSettings: { ...x.settings, transport: 'local' }, changedKeys: ['transport'] });
+  assert.equal(x.device.testUnavailable, unavailable);
+  assert.equal(x.device._controlsInitializationFailed, true);
+  await x.device.onUninit(); base.driver.onUninit();
+});
+
 test('automatic checks defer while busy, refresh without sending commands, and schedule once', async () => {
   const x = await newMagicDevice(); let reads = 0;
   scenario.listDevices = async () => { reads++; return [copy(magicEndpoint)]; };
@@ -249,6 +282,33 @@ test('reinitialization waits for an old command and prevents duplicate polling o
   assert.equal(x.device._stopped, true); assert.equal(x.timers.size, 0);
   release({}); await assert.rejects(pending, /cancelled/); await initializing;
   assert.equal(x.device._stopped, false); assert.equal(x.timers.size, 1); assert.equal(x.trigger.calls.length, 0); assert.equal(scenario.cloudSends, 1);
+});
+
+test('shutdown during reinitialization drain cannot revive the cloud device or its polling', async () => {
+  const x = await newMagicDevice(); let release;
+  scenario.control = () => new Promise(resolve => { release = resolve; });
+  const sending = assert.rejects(x.device.executeCommand({ variable: x.device.onAutoComplete()[0] }), /cancelled/);
+  const initializing = x.device.onInit();
+  const stopping = x.device.onUninit();
+  let availabilityWrites = 0;
+  x.device.setAvailable = async () => { availabilityWrites++; };
+  release({}); await Promise.all([sending, initializing, stopping]);
+  assert.equal(x.device._stopped, true); assert.equal(x.timers.size, 0);
+  assert.equal(availabilityWrites, 0); assert.equal(x.trigger.calls.length, 0);
+  x.driver.onUninit();
+});
+
+test('overlapping initializations retain only the newest generation after draining a command', async () => {
+  const x = await newMagicDevice(); let release;
+  scenario.control = () => new Promise(resolve => { release = resolve; });
+  const sending = assert.rejects(x.device.executeCommand({ variable: x.device.onAutoComplete()[0] }), /cancelled/);
+  let availabilityWrites = 0;
+  x.device.setAvailable = async () => { availabilityWrites++; };
+  const first = x.device.onInit(); const second = x.device.onInit();
+  release({}); await Promise.all([sending, first, second]);
+  assert.equal(availabilityWrites, 1); assert.equal(x.timers.size, 1);
+  assert.equal(x.device._stopped, false); assert.equal(x.trigger.calls.length, 0);
+  await x.device.onUninit(); x.driver.onUninit();
 });
 
 test('three user commands wait for an automatic check and excess requests never send', async () => {
@@ -380,6 +440,28 @@ test('failed physical send is attempted once and triggers only on success', asyn
   reset(); const base = await newBundle(); const x = makeDevice(base.driver, base.bundle); await x.device.onInit(); const args = { variable: { id: base.bundle.commands[0].id } };
   scenario.sendError = true; await assert.rejects(x.device.executeCommand(args)); assert.equal(scenario.cloudSends, 1); assert.equal(scenario.localSends, 0); assert.equal(base.trigger.calls.length, 0);
   scenario.sendError = false; await x.device.executeCommand(args); assert.equal(scenario.cloudSends, 2); assert.equal(base.trigger.calls.length, 1);
+});
+
+test('real RM Max EU response rejection never emits a sent-command Flow', async () => {
+  for (const kind of ['cloud', 'device', 'authorization']) {
+    reset(); const base = await newBundle(); const x = makeDevice(base.driver, base.bundle);
+    await x.device.onInit();
+    x.device._config.hub = { ...x.device._config.hub, devicetypeFlag: 1,
+      cookie: Buffer.from(JSON.stringify({ terminalid: 1, aeskey: '00112233445566778899aabbccddeeff' })).toString('base64') };
+    let requests = 0;
+    x.device._client = new realCloud.BroadlinkCloud(x.device._config.session, { request: async (_, { body }) => {
+      requests++;
+      const directive = JSON.parse(body).directive;
+      const response = { status: kind === 'cloud' ? -5 : 0, event: { header: { ...directive.header, name: 'Response' },
+        endpoint: { endpointId: directive.endpoint.endpointId }, payload: { status: kind === 'device' ? -5 : 0, data: 'AgAAAAAAAAAAAAAAAAAAAA==' } } };
+      if (kind === 'authorization') { response.event.header.name = 'ErrorResponse'; response.event.payload.type = 'INVALID_ACCESSTOKEN'; }
+      return response;
+    } });
+    await assert.rejects(x.device.executeCommand({ variable: x.device.onAutoComplete()[0] }));
+    assert.equal(requests, 1); assert.equal(base.trigger.calls.length, 0); assert.equal(scenario.localSends, 0);
+    assert.equal(x.device._authRequired, kind === 'authorization');
+    await x.device.onUninit(); base.driver.onUninit();
+  }
 });
 test('local mode requires successful probe and matching IP and key fingerprint', async () => {
   reset(); const base = await newBundle(); const x = makeDevice(base.driver, base.bundle); await x.device.onInit(); const args = { variable: { id: base.bundle.commands[0].id } };
