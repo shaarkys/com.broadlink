@@ -226,5 +226,8 @@
   },
   "3.1.83": {
     "en": "Improved RM Max handling of overlapping controls with a bounded operation queue, five-second waiting expiry, and operation timing diagnostics."
+  },
+  "3.1.84": {
+    "en": "Added cloud support for RM Max, RM3 Mini, RM4 Mini and RM4 Pro, including saved-command import, configurable standard and custom controls, Flow actions, automatic command refresh, connection monitoring, recovery and Repair. Added BroadLink EU password/email-code sign-in, RM Max Magic Home authorization, and shorter status messages. Existing local drivers and Flows remain supported."
   }
 }
