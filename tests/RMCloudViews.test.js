@@ -55,8 +55,8 @@ function fixture(overrides = {}, language = 'en', view = source) {
     Date: { now: () => now }, setTimeout: (callback, delay) => { const id = ++nextTimer; timers.set(id, { callback, at: now + delay }); return id; }, clearTimeout: id => timers.delete(id),
     window: { addEventListener: (event, handler) => { windowEvents[event] = handler; } },
     navigator: { language }, document: { getElementById: id => elements.get(id), createElement: tag => new Element(tag),
-      querySelectorAll: () => [...elements.values(), ...descendants(elements.get('roles')), ...descendants(elements.get('buttons'))]
-        .filter(element => ['input', 'select', 'button'].includes(element.tagName)) },
+      querySelectorAll: selector => [...elements.values(), ...descendants(elements.get('roles')), ...descendants(elements.get('buttons'))]
+        .filter(element => selector.split(',').some(part => part.trim().endsWith(' ' + element.tagName))) },
     Homey: { emit: async (event, data = {}) => { calls.push({ event, data: JSON.parse(JSON.stringify(data)) }); return handlers[event](data); },
       createDevice: async device => { devices.push(device); }, done: () => { done++; } },
   });
@@ -294,6 +294,45 @@ test('RM Max provider changes discard a late preview and cannot request email co
   assert.equal(f.$('previewSection').hidden, true); assert.equal(f.$('complete').disabled, true);
   f.$('loginMethod').value = 'email_code'; f.$('requestCode').dispatch('click', true); await settle();
   assert.equal(f.calls.some(call => call.event === 'cloud_request_code'), false);
+});
+
+test('RM Max explains empty and unsupported Magic Home discovery and allows a fresh region selection', async () => {
+  for (const language of ['en', 'nl-NL']) {
+    let devices = 0;
+    const f = fixture({ cloud_login: () => ({ provider: 'magic_home', homes: [] }),
+      cloud_discover: () => ({ provider: 'magic_home', hubs: devices === 2 ? [{ id: 'remote', name: 'Remote' }] : [], summary: { devices, hubs: devices === 2 ? 1 : 0 }, commandImportSupported: true }) }, language, maxSource);
+    await settle(); f.$('provider').value = 'magic_home'; f.$('provider').dispatch('change');
+    f.$('authCode').value = 'secret-code'; f.$('region').value = 'us'; await f.click('login');
+    assert.equal(f.$('region').disabled, true); assert.equal(f.$('reauthorize').hidden, false);
+    assert.match(f.$('connectionStatus').textContent, language === 'en' ? /accepted the authorization code/ : /autorisatiecode geaccepteerd/);
+    await f.click('discover');
+    assert.match(f.$('connectionStatus').textContent, language === 'en' ? /returned no devices/ : /geen apparaten/);
+    assert.equal(f.$('hubSection').hidden, true); assert.equal(f.$('complete').disabled, true);
+    devices = 1; await f.click('discover');
+    assert.match(f.$('connectionStatus').textContent, language === 'en' ? /no eligible remote or sensor/ : /geen geschikte afstandsbediening of sensor/);
+    devices = 2; await f.click('discover');
+    assert.match(f.$('connectionStatus').textContent, language === 'en' ? /discovery succeeded/ : /ophalen is gelukt/);
+    assert.equal(f.$('hubSection').hidden, false);
+    await f.click('reauthorize');
+    assert.equal(f.$('region').disabled, false); assert.equal(f.$('provider').disabled, false);
+    assert.equal(f.$('login').hidden, false); assert.equal(f.$('discover').hidden, true);
+    assert.equal(f.$('hubSection').hidden, true); assert.equal(f.$('connectionStatus').textContent, '');
+    f.$('region').value = 'eu'; f.$('authCode').value = 'fresh-code'; await f.click('login');
+    assert.equal(f.calls.at(-1).data.region, 'eu'); assert.equal(f.calls.at(-1).data.authCode, 'fresh-code');
+    assert.equal(f.$('authCode').value, '');
+  }
+});
+
+test('RM Max keeps pairing diagnostics visible and clears them on a new authorization attempt', async () => {
+  const message = 'Magic Home authorization code exchange: Cloud authorization expired or was rejected (status 3). Server: ha-magic-home-mfdddeskcg.cn-hangzhou.fcapp.run; region: eu; HTTPS port 443. Copy a fresh authorization code from the same Magic Home home and choose its server region. BroadLink EU credentials are separate. Check the selected home in My / third-party services before trying again.';
+  const f = fixture({ cloud_login: () => { throw Error(message); } }, 'en', maxSource);
+  await settle(); f.$('provider').value = 'magic_home'; f.$('provider').dispatch('change');
+  f.$('authCode').value = 'secret-code'; await f.click('login');
+  assert.equal(f.$('error').textContent, message); assert.equal(f.$('error').focused, true);
+  assert.equal(f.$('authCode').value, ''); assert.equal(f.$('region').disabled, false);
+  assert.equal(f.$('discover').hidden, true);
+  f.$('provider').value = 'broadlink_eu'; f.$('provider').dispatch('change');
+  assert.equal(f.$('error').textContent, ''); assert.equal(f.$('connectionStatus').textContent, '');
 });
 
 for (const [name, view] of [['RM cloud', source], ['RM Max', maxSource]]) {

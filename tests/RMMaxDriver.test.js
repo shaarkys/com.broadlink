@@ -23,13 +23,13 @@ class EU {
   static async requestEmailCode(email) { (scenario.codeEmails ||= []).push(email); if (scenario.codeSend) await scenario.codeSend(); }
   static async loginWithEmailCode(email, code) { (scenario.codeLogins ||= []).push({ email, code }); return scenario.codeLogin ? scenario.codeLogin() : copy(account); }
   getSession() { return copy(this.session); }
-  async listHomes() { scenario.homesReads = (scenario.homesReads || 0) + 1; return copy(scenario.homes || [{ id: 'home1', name: 'Home' }]); }
+  async listHomes() { scenario.homesReads = (scenario.homesReads || 0) + 1; if (scenario.homesError) throw scenario.homesError; return copy(scenario.homes || [{ id: 'home1', name: 'Home' }]); }
   async listDevices() { return scenario.listDevices ? scenario.listDevices() : copy(scenario.endpoints || [hub, remote]); }
   async getRemote() { if (scenario.remoteError) throw Error('sensitive failure'); return { irData: Array.from({ length: 10 }, (_, i) => ({ name: `RF${i}`, codeList: [{ code: 'aabb' + i.toString(16).padStart(2, '0') }] })) }; }
   async sendCode() { scenario.cloudSends++; if (scenario.sendError) throw Error('sensitive failure'); }
 }
 class Magic extends EU {
-  static async authorize() { return copy(magic); }
+  static async authorize() { return scenario.authorize ? scenario.authorize() : copy(magic); }
   async control(endpoint, namespace, action, payload, version) {
     scenario.cloudSends++; (scenario.directives ||= []).push({ namespace, action, payload, version });
     if (scenario.control) return scenario.control(this, endpoint, namespace, action, payload);
@@ -417,6 +417,36 @@ test('Magic Home discovery logs safe endpoint capabilities and numbers matching 
   assert.equal(p.discovery.hubs[0].name, '#1 private name');
   assert.match(logs.join('\n'), /knownActions.*ChangePowerState/);
   for (const secret of ['private name', 'private-cookie', 'private interface', 'private action', 'secret-token']) assert.equal(logs.join('\n').includes(secret), false, secret);
+});
+
+test('pairing exposes the failed Magic Home step, gateway and region without leaking credentials', async () => {
+  for (const step of ['authorization', 'discovery']) {
+    reset(); let requests = 0;
+    const failure = () => { requests++; throw Object.assign(Error('secret-token secret-code private-cookie'), { code: 'AUTH_REQUIRED', remoteStatus: 3 }); };
+    if (step === 'authorization') scenario.authorize = failure; else scenario.listDevices = failure;
+    const x = makeDriver(); await x.driver.onInit(); const h = {};
+    x.driver.onPair({ setHandler(name, fn) { h[name] = fn; } });
+    const signIn = () => h.cloud_login({ provider: 'magic_home', authCode: 'secret-code', region: 'eu' });
+    if (step === 'discovery') await signIn();
+    await assert.rejects(step === 'authorization' ? signIn() : h.cloud_discover({}), error => {
+      assert.match(error.message, step === 'authorization' ? /Magic Home authorization code exchange/ : /Magic Home device discovery/);
+      assert.match(error.message, /status 3/); assert.match(error.message, /ha-magic-home-mfdddeskcg.cn-hangzhou.fcapp.run/);
+      assert.match(error.message, /region: eu/); assert.match(error.message, /fresh authorization code/);
+      assert(error.message.length < 800); assert.doesNotMatch(error.message, /secret|private-cookie/); return true;
+    });
+    assert.equal(requests, 1); assert.match(x.logs.join('\n'), /cloud request failed; durationMs=\d+; Magic Home/);
+    assert.doesNotMatch(x.logs.join('\n'), /secret|private-cookie/);
+  }
+});
+
+test('EU home discovery failures are identified separately from successful credential authentication', async () => {
+  reset(); scenario.homesError = Object.assign(Error('secret-session'), { httpStatus: 503 });
+  const x = makeDriver(); await x.driver.onInit(); const h = {};
+  x.driver.onPair({ setHandler(name, fn) { h[name] = fn; } });
+  await assert.rejects(h.cloud_login({ provider: 'broadlink_eu', email: 'private@example.org', password: 'secret-password' }), error => {
+    assert.match(error.message, /BroadLink EU home discovery/); assert.match(error.message, /HTTP 503/);
+    assert.match(error.message, /app-service-deu-6dc239d5.ibroadlink.com/); assert.doesNotMatch(error.message, /secret|private@example/); return true;
+  });
 });
 test('bootstrap token is one-use and bound to the selected identity', async () => {
   reset(); const { driver } = makeDriver(); await driver.onInit(); const p = await pair(driver); await p.handlers.cloud_preview({ hubId: 'hub1' }); const result = await p.handlers.cloud_complete({ hubId: 'hub1' });

@@ -20,7 +20,8 @@
     <div class="rm-field"><label for="authCode" id="authLabel"></label><input id="authCode" type="password" autocomplete="off"></div>
     <div class="rm-field"><label for="region" id="regionLabel"></label><select id="region"><option value="eu">Europe</option><option value="us">United States</option><option value="cn">China</option></select></div>
   </div>
-  <div class="rm-actions"><button id="login" type="button"></button></div>
+  <div class="rm-actions"><button id="login" type="button"></button><button id="reauthorize" type="button" hidden></button></div>
+  <p id="connectionStatus" role="status" aria-live="polite"></p>
   <div id="homeSection" hidden><div class="rm-field"><label for="home" id="homeLabel"></label><select id="home"></select></div></div>
   <div class="rm-actions"><button id="discover" type="button" hidden></button></div>
   <p id="summary" aria-live="polite"></p>
@@ -40,6 +41,25 @@
   } : {
     intro: 'Cloud access requires internet. Learn commands in the BroadLink or Magic Home app, then refresh commands in Homey. The cloud determines which buttons are available.', provider: 'Service', eu: 'Use an international BroadLink app account in the EU.', magic: 'Use an official Magic Home authorization code from My / third-party services. Add a discovered remote or sensor. Only cloud-advertised functions are available; learn new buttons in Magic Home.', email: 'Email address', password: 'Password', loginMethod: 'Sign-in method', emailCode: 'Email verification code', requestCode: 'Send verification code', codeHelp: 'Use the email registered to your existing BroadLink EU account.', codeSent: 'Code requested. Check your inbox. Wait until you can request another code.', codeReady: 'You can now request another code.', codeCredentials: 'Request a code for this email address first, then enter the verification code.', emailRequired: 'Enter your email address.', auth: 'Authorization code', region: 'Region', login: 'Sign in', home: 'Home', discover: 'Find devices', hub: 'Remote or sensor', preview: 'Preview commands', learning: 'Available commands and sensors:', skipped: 'Skipped:', local: 'Optional: test local credentials with a read-only firmware request. No remote command is sent.', ip: 'Local IP address', probe: 'Test local credentials', tested: 'Local test succeeded. Firmware:', add: 'Add device', repair: 'Repair device', failed: 'The action failed. Check the details and try again.', noHubs: 'No eligible RM Max found.', limitation: 'Only cloud-advertised functions are available.', summary: 'Devices / RM Max matches / local credentials:', unavailable: 'This device cannot currently be added or repaired.', reason: 'Details:'
   };
+  Object.assign(texts, nl ? {
+    eu: 'Gebruik een EU-account van de BroadLink Universal Remote-app. Magic Home gebruikt een aparte dienst en autorisatie.',
+    magic: 'Kopieer de apparaat-autorisatiecode uit Mijn / diensten van derden in BroadLink Magic Home, voor de woning met je apparaat. Gebruik geen toegangstoken of e-mailcode. Kies dezelfde serverregio als in de app. BroadLink Universal Remote gebruikt een aparte dienst.',
+    reauthorize: 'Opnieuw aanmelden',
+    magicAccepted: 'Magic Home heeft de autorisatiecode geaccepteerd. Zoek nu apparaten om de toegang tot deze woning te controleren.',
+    magicDiscovered: 'Magic Home-apparaten ophalen is gelukt. Bekijk de beschikbare commando’s van een gevonden apparaat.',
+    euAccepted: 'Aanmelden en woningen ophalen is gelukt. Kies een woning en zoek apparaten.',
+    emptyMagic: 'De autorisatie is gelukt, maar deze woning geeft geen apparaten door. Controleer de woning en serverregio in Magic Home. Meld opnieuw aan met een nieuwe code voor die woning.',
+    unsupportedMagic: 'De cloud geeft apparaten door, maar geen geschikte afstandsbediening of sensor. Controleer of het gewenste apparaat en de knoppen in dezelfde Magic Home-woning beschikbaar zijn voor diensten van derden.'
+  } : {
+    eu: 'Use an EU account from the BroadLink Universal Remote app. Magic Home uses a separate service and authorization.',
+    magic: 'Copy the device authorization code from My / third-party services in BroadLink Magic Home, for the home containing your device. Do not use an access token or email code. Select the same server region as in the app. BroadLink Universal Remote uses a separate service.',
+    reauthorize: 'Sign in again',
+    magicAccepted: 'Magic Home accepted the authorization code. Next, find devices to check access to this home.',
+    magicDiscovered: 'Magic Home device discovery succeeded. Preview the available commands of a listed device.',
+    euAccepted: 'Sign-in and home discovery succeeded. Select a home and find devices.',
+    emptyMagic: 'Authorization succeeded, but this home returned no devices. Check the home and server region in Magic Home. Sign in again with a fresh code for that home.',
+    unsupportedMagic: 'The cloud returned devices, but no eligible remote or sensor. Check that the intended device and its buttons are available to third-party services in the same Magic Home home.'
+  });
   var $ = function (id) { return document.getElementById(id); };
   var text = function (id, value) { $(id).textContent = value; };
   var state = { revision: 0, requestedEmail: null, retryAt: 0, closed: false, repair: false, busy: false, loggedIn: false, hubs: [], canAdd: false, hasCredentials: false };
@@ -70,12 +90,14 @@
     text('providerHelp', magic ? texts.magic : texts.eu);
     Array.prototype.forEach.call(document.querySelectorAll('#rmmax input, #rmmax select'), function (input) { input.disabled = state.busy; });
     $('provider').disabled = state.busy || state.loggedIn;
+    $('region').disabled = state.busy || state.loggedIn;
     Array.prototype.forEach.call(document.querySelectorAll('#rmmax button'), function (button) { button.disabled = state.busy; });
     $('passwordField').hidden = emailCode(); $('password').required = !emailCode(); $('codeFields').hidden = !emailCode();
     $('requestCode').disabled = state.busy || Date.now() < state.retryAt || magic;
     $('complete').disabled = state.busy || !state.canAdd;
     $('probe').disabled = state.busy || !state.hasCredentials;
     $('login').hidden = state.loggedIn; $('discover').hidden = !state.loggedIn;
+    $('reauthorize').hidden = !state.loggedIn;
   }
   function option(select, value, label) { var item = document.createElement('option'); item.value = value; item.textContent = label; select.appendChild(item); }
   async function run(task) {
@@ -84,7 +106,7 @@
     var revision = state.revision;
     try { await task(revision); } catch (error) {
       if (revision === state.revision && !state.closed) {
-        text('error', error && typeof error.message === 'string' ? error.message.slice(0, 400) : texts.failed);
+        text('error', error && typeof error.message === 'string' ? error.message.slice(0, 800) : texts.failed);
         $('error').focus(); $('error').scrollIntoView({ block: 'nearest' });
       }
     }
@@ -93,6 +115,7 @@
   function clearPreview() { state.canAdd = false; state.hasCredentials = false; $('previewSection').hidden = true; text('probeResult', ''); }
   function authChanged() {
     state.revision++; state.loggedIn = false; clearCode(); $('password').value = '';
+    text('connectionStatus', ''); text('error', '');
     clearPreview(); state.hubs = []; $('hub').replaceChildren(); $('hubSection').hidden = true; $('home').replaceChildren(); $('homeSection').hidden = true; text('summary', '');
     render();
   }
@@ -119,6 +142,8 @@
     text(ids[key] || key, texts[key]);
   });
   text('learning', texts.learning); text('localHelp', texts.local);
+  text('reauthorize', texts.reauthorize);
+  $('reauthorize').addEventListener('click', function () { $('authCode').value = ''; authChanged(); });
   $('provider').addEventListener('change', function () { $('email').value = ''; $('authCode').value = ''; authChanged(); if ($('provider').value === 'broadlink_eu') { applyLoginHint(); render(); } });
   $('login').addEventListener('click', function () { run(async function (revision) {
     var provider = $('provider').value; var usingCode = provider === 'broadlink_eu' && emailCode();
@@ -135,6 +160,7 @@
     if (revision !== state.revision || state.closed) return;
     clearCode();
     state.loggedIn = true;
+    text('connectionStatus', provider === 'magic_home' ? texts.magicAccepted : texts.euAccepted);
     $('home').replaceChildren();
     (result.homes || []).forEach(function (home) { option($('home'), home.id, home.name); });
     $('homeSection').hidden = !(result.homes && result.homes.length);
@@ -144,6 +170,7 @@
     var result = await Homey.emit('cloud_discover', $('homeSection').hidden ? {} : { homeId: $('home').value });
     if (revision !== state.revision || state.closed) return;
     var s = result.summary || {}; text('summary', texts.summary + ' ' + (s.devices || 0) + ' / ' + (s.hubs || 0) + ' / ' + (s.credentialSets || 0) + '. ' + (!result.commandImportSupported ? texts.limitation : (!result.hubs.length ? texts.noHubs : '')));
+    if (result.provider === 'magic_home') text('connectionStatus', result.hubs.length ? texts.magicDiscovered : (s.devices ? texts.unsupportedMagic : texts.emptyMagic));
     state.hubs = result.hubs || []; $('hub').replaceChildren();
     state.hubs.forEach(function (hub) { option($('hub'), hub.id, hub.name); });
     $('hubSection').hidden = state.hubs.length === 0;

@@ -73,9 +73,22 @@ class RMMaxDriver extends Homey.Driver {
         pairingLog(event, "failed", started, safeError(error)); throw error;
       } finally { if (ownsRequest) busy = false; }
     });
-    const network = async action => {
+    const network = async (action, stage, account = client?.getSession()) => {
+      const started = Date.now();
       try { return await action(); }
-      catch (error) { const message = safeError(error); pairingLog("cloud request", "failed", Date.now(), message); throw new Error(message); }
+      catch (error) {
+        let message = safeError(error);
+        if (stage) {
+          const magic = account?.provider === "magic_home";
+          const service = magic ? "Magic Home" : "BroadLink EU";
+          const server = magic ? "ha-magic-home-mfdddeskcg.cn-hangzhou.fcapp.run" : "app-service-deu-6dc239d5.ibroadlink.com";
+          const region = magic && ["cn", "us", "eu"].includes(account?.region) ? account.region : "eu";
+          message = `${service} ${stage}: ${message} Server: ${server}; region: ${region}; HTTPS port 443.`;
+          if (magic && error?.code === "AUTH_REQUIRED") message += " Copy a fresh authorization code from the same Magic Home home and choose its server region. BroadLink EU credentials are separate.";
+        }
+        pairingLog("cloud request", "failed", started, message);
+        throw new Error(message);
+      }
     };
     const hubFor = id => {
       const hub = endpoints.find(endpoint => endpoint.endpointId === id && isRMMaxEndpoint(endpoint));
@@ -97,7 +110,7 @@ class RMMaxDriver extends Homey.Driver {
     handle("cloud_request_code", async input => {
       client = undefined; endpoints = []; preview = undefined; homes = [];
       if (input.provider !== "broadlink_eu") throw new Error("Email codes require BroadLink EU.");
-      const result = await network(() => emailLogin.request(input.email, email => BroadlinkCloud.requestEmailCode(email)));
+      const result = await network(() => emailLogin.request(input.email, email => BroadlinkCloud.requestEmailCode(email)), "email code request", { provider: "broadlink_eu" });
       assertActive(); this.log("RM Max email verification code requested");
       rememberLogin(input.email, "email_code");
       return result;
@@ -111,13 +124,13 @@ class RMMaxDriver extends Homey.Driver {
         if (input.method !== undefined && !["password", "email_code"].includes(input.method)) throw new Error("Choose password or email verification code.");
         const account = await network(() => input.method === "email_code"
           ? emailLogin.login(input.email, input.code, (email, code) => BroadlinkCloud.loginWithEmailCode(email, code))
-          : BroadlinkCloud.login(input.email, input.password));
+          : BroadlinkCloud.login(input.email, input.password), "sign-in", { provider: "broadlink_eu" });
         assertActive();
         nextClient = new BroadlinkCloud(account);
-        homes = await network(() => nextClient.listHomes());
+        homes = await network(() => nextClient.listHomes(), "home discovery", account);
       } else if (input.provider === "magic_home") {
         if (input.method === "email_code") throw new Error("Email codes require BroadLink EU.");
-        const account = await network(() => MagicHomeCloud.authorize(input.authCode, input.region));
+        const account = await network(() => MagicHomeCloud.authorize(input.authCode, input.region), "authorization code exchange", { provider: "magic_home", region: input.region });
         nextClient = new MagicHomeCloud(account);
       } else throw new Error("Choose BroadLink EU or Magic Home.");
       assertActive(); client = nextClient;
@@ -132,7 +145,7 @@ class RMMaxDriver extends Homey.Driver {
         if (!homes.some(home => home.id === input.homeId)) throw new Error("Select one of your listed homes.");
         client = clientFor({ ...account, familyId: input.homeId });
       }
-      const found = await network(() => client.listDevices());
+      const found = await network(() => client.listDevices(), "device discovery");
       assertActive();
       if (new Set(found.map(endpoint => endpoint.endpointId)).size !== found.length) throw new Error("Cloud discovery returned ambiguous device identifiers.");
       endpoints = found;

@@ -158,6 +158,91 @@ test('Magic Home authorization, refresh, discovery and control use official dire
   const endpoints = await cloud.listDevices(); assert.equal(endpoints.length, 1); assert.equal(cloud.getSession().refreshToken, 'next');
   await cloud.control(endpoints[0], 'DNA.Power', 'Set', { power: 1 }); assert.equal(calls.length, 4);
 });
+
+test('Magic Home uses the official shared gateway and region header for every supported region', async () => {
+  for (const region of ['eu', 'us', 'cn']) {
+    const calls = [];
+    const request = async (url, req) => {
+      const target = new URL(url); calls.push(target.pathname);
+      assert.equal(target.origin, 'https://ha-magic-home-mfdddeskcg.cn-hangzhou.fcapp.run');
+      assert.equal(req.headers.CLOUD_SERVERS_DOMAIN, region);
+      if (target.pathname === '/oauth/v2/token') {
+        if (target.searchParams.get('grant_type') === 'authorization_code') {
+          assert.equal(target.searchParams.get('code'), 'code+&/?=');
+          assert.equal(target.searchParams.get('client_id'), '');
+          assert.equal(target.searchParams.get('redirect_uri'), 'http://homeassistant.local:8123');
+          assert.deepEqual(JSON.parse(req.body), { auth_code: 'code+&/?=' });
+        } else {
+          assert.equal(target.searchParams.get('grant_type'), 'refresh_token');
+          assert.equal(target.searchParams.get('refresh_token'), 'refresh+&/?=');
+        }
+        return { access_token: 'new', refresh_token: 'refresh+&/?=', expires_in: 3600 };
+      }
+      assert.equal(target.searchParams.get('license'), '');
+      const directive = JSON.parse(req.body).directive;
+      assert.equal(directive.header.namespace, 'DNA.Discovery');
+      assert.equal(directive.header.name, 'Discover');
+      assert.equal(directive.header.interfaceVersion, '2');
+      assert.deepEqual(directive.payload.scope, { type: 'BearerToken', token: 'new' });
+      return { event: { payload: { status: 0 }, endpoints: [] } };
+    };
+    const session = await MagicHomeCloud.authorize('code+&/?=', region, { request });
+    const client = new MagicHomeCloud(session, { request });
+    await client.refresh(); assert.deepEqual(await client.listDevices(), []);
+    assert.deepEqual(calls, ['/oauth/v2/token', '/oauth/v2/token', '/dnaproxy/v2/discover']);
+  }
+});
+
+test('HTTPS failures retain only safe diagnostic codes, statuses and response shape', async t => {
+  const https = require('node:https');
+  const { EventEmitter } = require('node:events');
+  const { safeError } = require('../lib/RMMaxCommands');
+  for (const code of ['ENOTFOUND', 'EAI_AGAIN', 'ECONNRESET', 'CERT_HAS_EXPIRED', 'ERR_TLS_CERT_ALTNAME_INVALID', 'untrusted-secret']) {
+    const mock = t.mock.method(https, 'request', () => {
+      const req = new EventEmitter(); req.destroy = () => {};
+      req.end = () => queueMicrotask(() => req.emit('error', Object.assign(Error('secret-token URL and password'), { code })));
+      return req;
+    });
+    let calls = 0;
+    await assert.rejects(MagicHomeCloud.authorize('secret-code', 'eu'), error => {
+      calls++;
+      assert.equal(error.code, code === 'untrusted-secret' ? undefined : code);
+      assert.doesNotMatch(error.message + safeError(error), /secret|password/);
+      if (code === 'ENOTFOUND') assert.match(safeError(error), /DNS/);
+      if (code === 'CERT_HAS_EXPIRED') assert.match(safeError(error), /TLS/);
+      return true;
+    });
+    assert.equal(calls, 1); assert.equal(mock.mock.callCount(), 1); mock.mock.restore();
+  }
+  for (const status of [200, 403, 503]) {
+    const mock = t.mock.method(https, 'request', (url, options, callback) => {
+      const req = new EventEmitter(); req.destroy = () => {};
+      req.end = () => queueMicrotask(() => {
+        const res = new EventEmitter(); res.statusCode = status; res.destroy = () => {}; callback(res);
+        if (status === 200) { res.emit('data', Buffer.from('<html>secret proxy page</html>')); res.emit('end'); }
+      });
+      return req;
+    });
+    await assert.rejects(MagicHomeCloud.authorize('secret-code', 'eu'), error => {
+      assert.doesNotMatch(error.message + safeError(error), /secret/);
+      if (status === 200) assert.equal(error.code, 'INVALID_CLOUD_RESPONSE');
+      else { assert.equal(error.httpStatus, status); assert.match(safeError(error), new RegExp('HTTP ' + status)); }
+      return true;
+    });
+    assert.equal(mock.mock.callCount(), 1); mock.mock.restore();
+  }
+});
+
+test('Magic Home distinguishes rejected authorization from malformed token responses without exposing bodies', async () => {
+  const { safeError } = require('../lib/RMMaxCommands');
+  for (const data of [{ expires_in: 0, status: 3 }, { expires_in: 3600 }, { status: 3 }]) {
+    await assert.rejects(MagicHomeCloud.authorize('secret-code', 'eu', { request: async () => ({ ...data, msg: 'secret response' }) }), error => {
+      assert.equal(error.code, data.expires_in === 0 ? 'AUTH_REQUIRED' : 'INVALID_CLOUD_RESPONSE');
+      if (data.expires_in === 0) assert.match(safeError(error), /status 3/);
+      assert.doesNotMatch(safeError(error), /secret/); return true;
+    });
+  }
+});
 test('malformed, expired, timeout and secret-bearing failures are safe', async () => {
   await assert.rejects(new BroadlinkCloud(euSession, { request: async () => ({ status: -1012, msg: 'secret' }) }).listDevices(), e => e.code === 'AUTH_REQUIRED' && e.remoteStatus === -1012 && !e.message.includes('secret'));
   await assert.rejects(new BroadlinkCloud(euSession, { request: async () => ({ status: 0, data: { endpoints: Array(501).fill({ endpointId: 'a' }) } }) }).listDevices(), /Invalid cloud response/);

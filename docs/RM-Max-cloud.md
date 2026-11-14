@@ -139,6 +139,56 @@ is reported separately from a cloud authorization failure.
 
 ## Authorization and diagnostics
 
+### Pairing diagnostics (unreleased)
+
+The Magic Home token exchange, refresh, region header and discovery envelope were
+compared with BroadLink's official integration on 14 November 2026. No protocol
+mismatch was found in those requests. All three Magic Home regions use
+`ha-magic-home-mfdddeskcg.cn-hangzhou.fcapp.run`; the `CLOUD_SERVERS_DOMAIN` header
+selects `eu`, `us` or `cn`. The BroadLink Universal Remote EU service instead uses
+`app-service-deu-6dc239d5.ibroadlink.com`. Both require outbound HTTPS on port 443.
+An account or device registered in one service is not evidence of access through
+the other service. A reporter confirmed BroadLink EU operation after moving an
+RM Max from Magic Home, but the earlier generic failures do not establish why
+that reporter's Magic Home authorization or discovery failed.
+
+RM Max pairing and Repair now identify authorization-code exchange, EU sign-in,
+home discovery and device discovery separately when they fail. The on-screen
+error includes the fixed server hostname, selected region, and safe DNS,
+connection, TLS, HTTP or numeric cloud-status details when available. Raw error
+messages, query strings, response bodies, authorization codes and tokens are
+never included. Unknown failures remain explicitly inconclusive. Transport
+classification also improves existing cloud-device error messages.
+
+Successful Magic Home authorization is shown separately from successful device
+discovery. Empty inventories and inventories without eligible entries have
+different guidance. **Sign in again** clears the current selection and lets the
+user choose another service or region and enter a fresh authorization code.
+Get that code from **My / third-party services** in the Magic Home home containing
+the device; an access token or email verification code is not that authorization
+code. No automatic region probing, authentication retry or device command is
+introduced. Existing device identities, stores, capabilities and Flows are unchanged.
+
+Manual checks for this change (not executed on Homey):
+
+1. Open RM Max pairing or Repair. Select Magic Home and the region used in the
+   vendor app. Enter a fresh authorization code; confirm authorization success
+   appears before pressing **Find devices**.
+2. Discover and preview an existing supported remote. Verify its buttons remain
+   available. For a home with no exported devices or no eligible entries, check
+   the corresponding guidance and disabled completion button.
+3. Choose **Sign in again**, change the region or service, and authorize afresh.
+   Confirm the old device list, preview and errors are cleared.
+4. With an invalid/expired code, check for the authorization-code-exchange error
+   and safe cloud status if supplied. For a controlled DNS/firewall failure,
+   check that the failed step and server appear; DNS, connection, TLS and timeout
+   distinctions depend on the error actually reported by Homey's runtime.
+5. Pair or Repair through BroadLink EU, select the original home/device, and
+   confirm existing Flows still work. Check diagnostics contain no credentials.
+
+Changelog: Improved RM Max pairing and Repair diagnostics for Magic Home and
+BroadLink EU, with clearer service/region guidance and safe connection errors.
+
 Passwords and authorization codes are used during pairing only. Sessions, hub
 credentials and saved codes are kept in the device store, not editable settings
 or frontend responses. Pairing passes a short-lived, one-use bootstrap reference
