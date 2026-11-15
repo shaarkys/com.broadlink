@@ -232,5 +232,8 @@
   },
   "3.1.85": {
     "en": "Added RM5 Plus cloud support with EU sign-in, IR command import, configurable controls, Flows, automatic refresh, connection recovery and Repair."
+  },
+  "3.1.86": {
+    "en": "Improved RM Max pairing and Repair with clearer Magic Home/BroadLink EU"
   }
 }
