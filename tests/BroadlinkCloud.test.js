@@ -104,6 +104,20 @@ test('EU remote import identifies the rejected field without exposing its value'
     });
   }
 });
+test('EU remote lookup rejects missing, invalid and mismatched identities even with usable buttons', async () => {
+  const { safeError } = require('../lib/RMMaxCommands');
+  for (const [endpointId, reason] of [[undefined, 'missing'], [null, 'missing'], ['', 'missing'], [12, 'invalid'], ['private-other-id', 'mismatch']]) {
+    const data = { endpointId, irData: [{ name: 'Power', codeList: [{ code: 'abcd' }] }] };
+    const client = new BroadlinkCloud(euSession, { request: async () => ({ status: 0, data }) });
+    await assert.rejects(client.getRemote('expected'), error => {
+      assert.equal(error.field, 'endpointId');
+      assert.equal(error.reason, reason);
+      assert.match(safeError(error), new RegExp('endpointId: ' + reason));
+      assert.doesNotMatch(safeError(error), /private-other-id|abcd/);
+      return true;
+    });
+  }
+});
 
 test('EU send uses exact envelope, validates ack and never retries', async () => {
   let count = 0;

@@ -484,6 +484,80 @@ test('refresh failure preserves previous saved commands and persistent configura
   reset(); const base = await newBundle(); const x = makeDevice(base.driver, base.bundle); await x.device.onInit(); scenario.remoteError = true;
   await assert.rejects(x.device.refreshCommands()); assert.deepEqual(x.stored(), base.bundle); assert.deepEqual(x.device._config, base.bundle);
 });
+test('EU refresh and Repair retain only saved commands for discovered remotes with unbound replies', async t => {
+  reset();
+  const base = await newBundle();
+  const x = makeDevice(base.driver, base.bundle);
+  await x.device.onInit();
+  scenario.endpoints = [hub, remote, { ...remote, endpointId: 'new-remote' }, { ...remote, endpointId: 'unknown-remote' }];
+  t.mock.method(EU.prototype, 'getRemote', async id => {
+    if (id === 'new-remote') return { irData: [{ name: 'Play', codeList: [{ code: 'abcd' }] }] };
+    throw Object.assign(Error('private response'), { code: 'INVALID_CLOUD_RESPONSE', field: 'endpointId' });
+  });
+  const repair = await pair(base.driver, 'broadlink_eu', x.device);
+  const preview = await repair.handlers.cloud_preview({ hubId: 'hub1' });
+  assert.equal(preview.unverifiedRemotes, 2);
+  assert.equal(preview.retainedCommands, 10);
+  assert.equal(preview.commands.length, 11);
+  assert.equal(preview.canAdd, true);
+  await repair.handlers.cloud_complete({ hubId: 'hub1' });
+  await x.device.refreshCommands(true);
+  assert.deepEqual(x.stored().commands.slice(0, 10), base.bundle.commands);
+  assert.equal(x.stored().commands[10].remoteId, 'new-remote');
+  assert.equal(x.device.testUnavailable, false);
+  assert.match(x.values.rmmax_status, /Partial refresh: 10 retained/);
+  assert.equal(scenario.cloudSends, 0);
+  await x.device.executeCommand({ variable: { id: base.bundle.commands[0].id } });
+  assert.equal(scenario.cloudSends, 1);
+  scenario.endpoints = [hub, { ...remote, endpointId: 'unknown-remote' }];
+  const saved = x.stored();
+  await assert.rejects(x.device.refreshCommands(true), /endpointId/);
+  assert.deepEqual(x.stored(), saved);
+});
+
+test('EU preview rejects an unbound reply without a matching paired account, home and hub', async t => {
+  reset();
+  const base = await newBundle();
+  t.mock.method(EU.prototype, 'getRemote', async () => {
+    throw Object.assign(Error(), { code: 'INVALID_CLOUD_RESPONSE', field: 'endpointId' });
+  });
+  const fresh = await pair(base.driver);
+  await assert.rejects(fresh.handlers.cloud_preview({ hubId: 'hub1' }), /endpointId/);
+  for (const [section, field] of [['session', 'userId'], ['session', 'familyId'], ['hub', 'mac'], ['hub', 'endpointId']]) {
+    const other = copy(base.bundle);
+    other[section][field] = 'different';
+    const x = makeDevice(base.driver, other);
+    const repair = await pair(base.driver, 'broadlink_eu', x.device);
+    await assert.rejects(repair.handlers.cloud_preview({ hubId: 'hub1' }), /endpointId/);
+    await assert.rejects(repair.handlers.cloud_complete({ hubId: 'hub1' }), /Preview supported/);
+    assert.deepEqual(x.stored(), other);
+  }
+});
+
+test('EU automatic refresh keeps all 53 saved buttons through identity failures and resumes live import', async t => {
+  reset();
+  let failure = false;
+  const buttons = Array.from({ length: 53 }, (_, i) => ({ name: 'Button ' + i, codeList: [{ code: 'abcd' }] }));
+  t.mock.method(EU.prototype, 'getRemote', async () => {
+    if (failure) throw Object.assign(Error(), { code: 'INVALID_CLOUD_RESPONSE', field: 'endpointId' });
+    return { irData: buttons };
+  });
+  const base = await newBundle();
+  const x = makeDevice(base.driver, base.bundle);
+  await x.device.onInit();
+  failure = true;
+  await x.device.refreshCommands(true);
+  assert.deepEqual(x.stored().commands, base.bundle.commands);
+  assert.equal(x.device.testUnavailable, false);
+  assert.match(x.values.rmmax_status, /53 retained/);
+  failure = false;
+  buttons[0].codeList[0].code = 'eeee';
+  await x.device.refreshCommands(true);
+  assert.equal(x.stored().commands[0].id, base.bundle.commands[0].id);
+  assert.equal(x.stored().commands[0].code, 'eeee');
+  assert.doesNotMatch(x.values.rmmax_status, /Partial/);
+  assert.equal(scenario.cloudSends, 0);
+});
 test('failed physical send is attempted once and triggers only on success', async () => {
   reset(); const base = await newBundle(); const x = makeDevice(base.driver, base.bundle); await x.device.onInit(); const args = { variable: { id: base.bundle.commands[0].id } };
   scenario.sendError = true; await assert.rejects(x.device.executeCommand(args)); assert.equal(scenario.cloudSends, 1); assert.equal(scenario.localSends, 0); assert.equal(base.trigger.calls.length, 0);

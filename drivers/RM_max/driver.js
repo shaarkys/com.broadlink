@@ -163,12 +163,17 @@ class RMMaxDriver extends Homey.Driver {
     });
     handle("cloud_preview", async input => {
       const hub = hubFor(input.hubId);
-      const stage = client.getSession().provider === "broadlink_eu" ? "command preview" : undefined;
-      const result = await network(() => collectCommands(client, endpoints, hub, assertActive), stage);
+      const account = client.getSession();
+      const stage = account.provider === "broadlink_eu" ? "command preview" : undefined;
+      const previous = repairDevice && deviceId(account, hub) === repairDevice.getData().id ? repairDevice.getStoreValue("rmmax_cloud") : undefined;
+      preview = undefined;
+      const result = await network(() => collectCommands(client, endpoints, hub, assertActive, previous), stage);
       assertActive();
+      if (result.unverifiedRemotes) pairingLog("command preview", "partial", undefined, `unverified remotes=${result.unverifiedRemotes}; saved commands retained=${result.retainedCommands}`);
       preview = { hubId: hub.endpointId, ...result, localVerification: null };
       const canAdd = result.supported && (result.commands.length > 0 || result.sensors?.length > 0);
       return { commands: result.commands.map(({ id, name }) => ({ id, name })), skipped: result.skipped,
+        unverifiedRemotes: result.unverifiedRemotes, retainedCommands: result.retainedCommands,
         rawCredentialsAvailable: client.getSession().provider === "broadlink_eu" && !!extractCredentials(hub), canAdd,
         sensors: (result.sensors || []).map(sensor => sensor.capability),
         reason: canAdd ? "" : "No supported commands or sensors were advertised for this entry. Learn or expose commands in the vendor app, then discover again." };

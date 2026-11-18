@@ -181,7 +181,12 @@
     if (revision !== state.revision || state.closed) return;
     $('commands').replaceChildren(); (result.commands || []).forEach(function (command) { var li = document.createElement('li'); li.textContent = command.name; $('commands').appendChild(li); });
     (result.sensors || []).forEach(function (sensor) { var li = document.createElement('li'); li.textContent = sensor === 'measure_temperature' ? (nl ? 'Temperatuur' : 'Temperature') : (nl ? 'Vochtigheid' : 'Humidity'); $('commands').appendChild(li); });
-    text('skipped', texts.skipped + ' ' + (result.skipped || 0));
+    var summary = texts.skipped + ' ' + (result.skipped || 0);
+    if (result.unverifiedRemotes) {
+      summary += (nl ? '. Afstandsbedieningen zonder bevestigd cloud-ID: ' : '. Remotes without a verified cloud ID: ') + result.unverifiedRemotes
+        + (nl ? '. Eerder opgeslagen commando’s behouden: ' : '. Previously saved commands kept: ') + result.retainedCommands + '.';
+    }
+    text('skipped', summary);
     state.hasCredentials = !!result.rawCredentialsAvailable; state.canAdd = !!result.canAdd;
     $('localSection').hidden = !state.hasCredentials; $('previewSection').hidden = false;
     if (!state.canAdd) text('error', result.reason || texts.unavailable);

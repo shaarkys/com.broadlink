@@ -183,6 +183,15 @@ test('Dutch labels and errors remain readable when loading cached controls fails
 });
 
 const maxSource = fs.readFileSync(path.join(root, 'drivers/RM_max/pair/cloud.html'), 'utf8');
+test('RM Max Repair shows how many saved buttons were retained on a partial preview', async () => {
+  for (const [language, message] of [['en', 'Previously saved commands kept: 53'], ['nl-NL', 'Eerder opgeslagen commando’s behouden: 53']]) {
+    const f = fixture({ cloud_context: () => ({ repair: true, provider: 'broadlink_eu' }) }, language, maxSource);
+    Object.assign(f.preview, { unverifiedRemotes: 1, retainedCommands: 53 });
+    await settle(); await f.login(); await f.click('discover'); await f.click('preview');
+    assert(f.$('skipped').textContent.includes(message));
+    assert.equal(f.$('complete').disabled, false);
+  }
+});
 for (const [name, view, provider] of [['RM cloud', source, {}], ['RM Max', maxSource, { provider: 'broadlink_eu' }]]) {
   const otp = async f => {
     await settle(); f.$('loginMethod').value = 'email_code'; f.$('loginMethod').dispatch('change');
