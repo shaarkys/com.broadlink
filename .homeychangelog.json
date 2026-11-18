@@ -235,5 +235,8 @@
   },
   "3.1.86": {
     "en": "Improved RM Max pairing and Repair with clearer Magic Home/BroadLink EU"
+  },
+  "3.1.87": {
+    "en": "Improved BroadLink EU saved-command import for RM Max. Repair and automatic refresh now accept saved buttons when the cloud omits the remote description or channel list. If command data is malformed, the error message identifies the affected field."
   }
 }
