@@ -238,5 +238,8 @@
   },
   "3.1.87": {
     "en": "Improved BroadLink EU saved-command import for RM Max. Repair and automatic refresh now accept saved buttons when the cloud omits the remote description or channel list. If command data is malformed, the error message identifies the affected field."
+  },
+  "3.1.88": {
+    "en": "Fixed BroadLink EU RM Max refresh and Repair failing when a saved-command response has a missing or mismatched remote ID."
   }
 }
