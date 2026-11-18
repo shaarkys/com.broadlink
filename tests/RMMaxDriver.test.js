@@ -397,6 +397,24 @@ test('shutdown and reinitialization cancel waiting commands and their timers bef
   }
 });
 
+test('EU Repair reports the same safe preview failure in the UI and event log', async t => {
+  reset();
+  const base = await newBundle();
+  const { device } = makeDevice(base.driver, base.bundle);
+  const logs = [];
+  base.driver.log = message => logs.push(message);
+  t.mock.method(EU.prototype, 'getRemote', async () => {
+    throw Object.assign(new Error('private-value'), { code: 'INVALID_CLOUD_RESPONSE', field: 'irData' });
+  });
+  const repair = await pair(base.driver, 'broadlink_eu', device);
+  await assert.rejects(repair.handlers.cloud_preview({ hubId: 'hub1' }), error => {
+    assert.match(error.message, /BroadLink EU command preview:.*irData/);
+    assert(logs.some(line => line.includes('cloud_preview failed') && line.includes(error.message)));
+    assert.doesNotMatch(error.message + logs.join('\n'), /private-value/);
+    return true;
+  });
+});
+
 test('EU pairing previews ten named commands and UI payloads exclude secrets and codes', async () => {
   reset(); const { driver } = makeDriver(); await driver.onInit(); const p = await pair(driver);
   const preview = await p.handlers.cloud_preview({ hubId: 'hub1' }); assert.equal(preview.commands.length, 10); assert.equal(preview.commands[9].name, 'Remote / RF9');

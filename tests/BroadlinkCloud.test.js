@@ -74,6 +74,37 @@ test('EU family, discovery, remotes preserve ten codes, duplicate and sequence',
   assert.equal((await cloud.listDevices())[0].endpointId, 'hub');
   const remote = await cloud.getRemote('remote'); assert.equal(remote.irData.length, 10); assert.equal(remote.irData[0].name, 'RF0'); assert.equal(remote.irData[1].codeList.length, 2); assert.equal(remote.irData[0].codeList[0].code, remote.irData[1].codeList[0].code);
 });
+test('EU saved commands can be imported without display metadata', async () => {
+  const irData = [{ function: 'power', codeList: [{ code: 'aabb' }] }];
+  for (const metadata of [{}, { ircodeDesc: null, channelList: null }, { ircodeDesc: '{}' }, { channelList: [] }]) {
+    const data = { endpointId: 'remote', irData, ...metadata };
+    const client = new BroadlinkCloud(euSession, { request: async () => ({ status: 0, data }) });
+    const remote = await client.getRemote('remote');
+    assert.deepEqual(remote.irData, [{ ...irData[0], name: 'power' }]);
+  }
+});
+
+test('EU remote import identifies the rejected field without exposing its value', async () => {
+  const { safeError } = require('../lib/RMMaxCommands');
+  const profile = { endpointId: 'remote', irData: null, ircodeDesc: '{}', channelList: null };
+  for (const [field, changes] of [
+    ['endpointId', { endpointId: 'private-value' }],
+    ['irData', { irData: 'private-value' }],
+    ['ircodeDesc', { ircodeDesc: 'private-value' }],
+    ['channelList', { channelList: 'private-value' }],
+    ['codeList', { irData: [{ codeList: [{ code: null }] }] }],
+    ['ircodeDesc', { ircodeDesc: null }],
+  ]) {
+    const client = new BroadlinkCloud(euSession, { request: async () => ({ status: 0, data: { ...profile, ...changes } }) });
+    await assert.rejects(client.getRemote('remote'), error => {
+      assert.equal(error.code, 'INVALID_CLOUD_RESPONSE');
+      assert.match(safeError(error), new RegExp(field));
+      assert.doesNotMatch(safeError(error), /private-value/);
+      return true;
+    });
+  }
+});
+
 test('EU send uses exact envelope, validates ack and never retries', async () => {
   let count = 0;
   const cloud = new BroadlinkCloud(euSession, { request: async (url, req) => {

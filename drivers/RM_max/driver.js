@@ -9,6 +9,8 @@ const { magicProfile, capabilityIds } = require("../../lib/RMMaxMagic");
 const { EmailCodeLogin } = require("../../lib/EmailCodeLogin");
 const { getLoginPreferences, rememberLoginPreferences } = require("../../lib/CloudLoginPreferences");
 
+class PairingRequestError extends Error {}
+
 class RMMaxDriver extends Homey.Driver {
   async onInit() {
     this._pending = new Map();
@@ -70,7 +72,7 @@ class RMMaxDriver extends Homey.Driver {
         const result = await action(input); assertActive();
         pairingLog(event, "succeeded", started); return result;
       } catch (error) {
-        pairingLog(event, "failed", started, safeError(error)); throw error;
+        pairingLog(event, "failed", started, error instanceof PairingRequestError ? error.message : safeError(error)); throw error;
       } finally { if (ownsRequest) busy = false; }
     });
     const network = async (action, stage, account = client?.getSession()) => {
@@ -87,7 +89,7 @@ class RMMaxDriver extends Homey.Driver {
           if (magic && error?.code === "AUTH_REQUIRED") message += " Copy a fresh authorization code from the same Magic Home home and choose its server region. BroadLink EU credentials are separate.";
         }
         pairingLog("cloud request", "failed", started, message);
-        throw new Error(message);
+        throw new PairingRequestError(message);
       }
     };
     const hubFor = id => {
@@ -161,7 +163,8 @@ class RMMaxDriver extends Homey.Driver {
     });
     handle("cloud_preview", async input => {
       const hub = hubFor(input.hubId);
-      const result = await network(() => collectCommands(client, endpoints, hub, assertActive));
+      const stage = client.getSession().provider === "broadlink_eu" ? "command preview" : undefined;
+      const result = await network(() => collectCommands(client, endpoints, hub, assertActive), stage);
       assertActive();
       preview = { hubId: hub.endpointId, ...result, localVerification: null };
       const canAdd = result.supported && (result.commands.length > 0 || result.sensors?.length > 0);
